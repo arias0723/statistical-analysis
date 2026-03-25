@@ -1,6 +1,6 @@
 library(tidyverse)
-library(dplyr)
 library(car)
+library(lmtest)
 
 # Import “airplane price data set” to R.
 # The data set consists of following variables: Model, Production Year, Number of 
@@ -26,16 +26,16 @@ air_data <- air_data |>
     Price = Price...
   )
 air_data$EngineType <- as.factor(air_data$EngineType)
+# Price is generally right-skewed data; a log() transformation helps to normalize the data
+air_data$Price <- log(air_data$Price)
 
 str(air_data)
-
 
 hist(air_data$Price, 
      main = "Histogram of Price (Models: Airbus A320, Airbus A350, Boeing 737, Boeing 777)", 
      xlab = "Price", 
      col = "lightblue")
 
-# TODO: revisit this (use log)
 densityA320 <- density(air_data$Price[air_data$Model == "Airbus A320"], na.rm = TRUE)
 densityA350 <- density(air_data$Price[air_data$Model == "Airbus A350"], na.rm = TRUE)
 densityB737 <- density(air_data$Price[air_data$Model == "Boeing 737"], na.rm = TRUE)
@@ -72,20 +72,77 @@ for (var in num_vars) {
 }
 par(mfrow = c(1, 1))
 
-# Based on the boxplots, variables **Capacity**, **RangeKm** and **Price** are the ones affected by Model.
+# Based on the boxplots, variables **Price**, **Capacity**, and **RangeKm** are the ones affected by Model.
 
 # ANOVA and analysis
 aov_price <- aov(Price ~ Model, data = air_data)
+aov_capacity <- aov(Capacity ~ Model, data = air_data)
+aov_range <- aov(RangeKm ~ Model, data = air_data)
 summary(aov_price)
 
-# Q-Q Plot
-qqPlot(aov_price$residuals, main="Q-Q Plot for Residuals")
-# Shapiro-Wilk test
-shapiro.test(aov_price$residuals)
+# Assumptions of ANOVA
+# Populations from which the samples are selected must be normal
+par(mfrow = c(1, 3))
+qqnorm(aov_price$residuals, main = "Price Q-Q Plot")
+qqnorm(aov_capacity$residuals, main = "Capacity Q-Q Plot")
+qqnorm(aov_range$residuals, main = "RangeKm Q-Q Plot")
+par(mfrow = c(1, 1))
+#shapiro.test(residuals(aov_price))
 
-leveneTest(Price ~ Model, data = air_data)
+# Observations within each sample must be independent
+dwtest(aov_price, alternative ="two.sided")
+
+# Kolmogorov-Smirnov Test ???
+# ks.test(residuals(aov_price), "pnorm", mean(residuals(aov_price)), sd(residuals(aov_price)))
+# Populations from which the samples are selected must have equal variances (homogeneity of variance)
+bptest(aov_price)
 
 
+# ------------------------------------------ C ------------------------------------------
+# Apply a two-way ANOVA including Sales Region to the model. Interpret your findings.
+# ---------------------------------------------------------------------------------------
+
+# Two-Way ANOVA and analysis
+aov2_price <- aov(Price ~ Model * SalesRegion, data = air_data)
+summary(aov2_price)
+aov2_capacity <- aov(Capacity ~ Model * SalesRegion, data = air_data)
+summary(aov2_capacity)
+aov2_range <- aov(RangeKm ~ Model * SalesRegion, data = air_data)
+summary(aov2_range)
+
+# Region does not seem to influence any of the 3 numeric variables affected by Model
+
+
+# ------------------------------------------ D ------------------------------------------
+# Convert the variable Production Year to a categorical variable with two levels as “Older” and
+# “Newer” and save it as a new variable named “year_cat” in the data frame.
+# ---------------------------------------------------------------------------------------
+
+cutoff = median(air_data$ProductionYear)
+air_data$year_cat <- as.factor(ifelse(air_data$ProductionYear < cutoff, "Older", "Newer"))
+str(air_data)
+
+
+# ------------------------------------------ E ------------------------------------------
+# Analyze the effect of Model and year (“year_cat”) together on the price. Analyze whether the
+# interaction of two term is significant. Interpret your findings.
+# ---------------------------------------------------------------------------------------
+
+# Two-Way ANOVA and analysis
+aov2_price <- aov(Price ~ Model * year_cat, data = air_data)
+summary(aov2_price)
+
+# Test normality assumption for Two-Way ANOVA
+qqnorm(aov2_price$residuals)
+shapiro.test(residuals(aov2_price))
+
+# Observations within each sample must be independent
+dwtest(aov2_price, alternative ="two.sided")
+
+# Kolmogorov-Smirnov Test ???
+ks.test(residuals(aov2_price), "pnorm", mean(residuals(aov2_price)), sd(residuals(aov2_price)))
+# Populations from which the samples are selected must have equal variances (homogeneity of variance)
+bptest(aov2_price)
 
 
 
