@@ -1,13 +1,12 @@
 % ------------------------------------------------------------------------------
 % section 02
 % ------------------------------------------------------------------------------
-\newpage
 \section{Questions 2} 
 \label{cha:q2}
 
-\subsection[Q2-a]{Create a new data frame only including "Airbus $A320$", "Airbus $A350$", "Boeing 737" and "Boeing 777" models of airplanes. Check the distribution of Price: first for the observations in this sample and then for each model in the data frame. Interpret your findings.}
+\subsection{Q2-a}
 
-\begin{figure}[htbp]
+\begin{figure}[h]
     \centering
     \includegraphics[width=\figsizetext]{Q2/01-summary-price-all.png}
     \caption{Price for all selected models}
@@ -16,18 +15,18 @@
 
 After the log transformation, Price is approximately normally distributed overall. Per model, Boeing 777 and Airbus $A350$ have higher mean $\log(\text{Price})$ values reflecting their larger capacity and longer range. Boeing 737 and Airbus $A320$ cluster at lower price levels. Within each model, the $\log(\text{Price})$ distribution is roughly symmetric, confirming that log transformation was appropriate for subsubsequent ANOVA analysis.
 
-\begin{figure}[htbp]
+\begin{figure}[h]
     \centering
     \includegraphics[width=\figsizetext]{Q2/02-summary-price-by-model.png}
     \caption{Price by model}
     \label{fig:02}
 \end{figure}
 
-\subsection[Q2-b]{Analyze the numerical variables that are affected by the "Model". Test the assumptions of the statistical method, for the cases that you have found a significant association, by using corresponding tests and plots. Write your conclusions.}
+\subsection{Q2-b}
 
 We first used a visual approach to filter the variables that had no significance. The boxplots in figure \ref{fig:03} show that the four models fall into two subsub-groups: cheaper and more expensive models. This difference created a change in some variables, but left untouched others. The next subsection highlights our analysis.
 
-\begin{figure}[htbp]
+\begin{figure}[h]
     \centering
     \includegraphics[width=\figsizetext]{Q2/03-boxplot-of-numerics.png}
     \caption{Boxplot of numerical variables}
@@ -46,7 +45,7 @@ We first used a visual approach to filter the variables that had no significance
 
 We analyzed only the variable that passed the visula test.
 
-\begin{figure}[htbp]
+\begin{figure}[h]
     \centering
     \includegraphics[width=\figsizetext]{Q2/04-qqplot-numerical-all.png}
     \caption{QQ-plot for all numerical variables}
@@ -61,11 +60,11 @@ We analyzed only the variable that passed the visula test.
 \subsubsection*{Conclusion}
 The ANOVA p-value for Price is $< 0.05$, so at least one model has a significantly different mean $\log(\text{Price})$. The Tukey HSD test shows which specific pairs differ. We expect $Boeing 777$ and $Airbus A350$ (long-range) to have significantly higher prices than $Boeing 737$ and $Airbus A320$ (medium-range). 
 
-\subsection[Q2-c]{Apply a two-way ANOVA including Sales Region to the model. Interpret your findings.}
+\subsection{Q2-c}
 
 We applied ANOVA and the results are reported in table \ref{tab:05}. There is no significant interaction since the p-value is much higher than 0.05, so we can conclude that the relationship between the aircraft Model and its Price does not change based on the Sales Region. Also, while there might be a tiny hint of a regional difference, statistically speaking, Region does not significantly affect Price.
 
-\begin{table}[htbp]
+\begin{table}[h]
     \centering
     \begin{tabular}{l r r r r l}
         \hline
@@ -81,16 +80,16 @@ We applied ANOVA and the results are reported in table \ref{tab:05}. There is no
     \label{tab:05}
 \end{table}
 
-\subsection[Q2-d]{Convert the variable Production Year to a categorical variable with two levels as "Older" and "Newer" and save it as a new variable named "year\_cat" in the data frame.}
+\subsection{Q2-d}
 
 To compute the categorization of Production Year we first calculated the median and then applied it to a new variable: $year\_cat$.
 
-\subsection[Q2-e]{Analyze the effect of Model and year ("year\_cat") together on the price. Analyze whether the interaction of two term is significant. Interpret your findings.}
+\subsection{Q2-e}
 
 Figure \ref{fig:06} plot aligns with previous analysis: there are two cheaper plane models and two expensive ones, and now we observe that there are older and newer models also which are a bit more expensive (shifted to the right) in each case.
 The ANOVA interaction plot shown in figure \ref{fig:08} is just one more analysis that make us sure about what has been deducted before.
 
-\begin{figure}[htbp]
+\begin{figure}[h]
     \centering
     \includegraphics[width=\figsizetext]{Q2/06-plot-by-year-cat.png}
     \caption{Plot by year\_cat}
@@ -98,7 +97,7 @@ The ANOVA interaction plot shown in figure \ref{fig:08} is just one more analysi
 \end{figure}
 
 
-\begin{table}[htbp]
+\begin{table}[h]
     \centering
     \begin{tabular}{l r r r r l}
         \hline
@@ -114,7 +113,7 @@ The ANOVA interaction plot shown in figure \ref{fig:08} is just one more analysi
     \label{tab:07}
 \end{table}
 
-\begin{figure}[htbp]
+\begin{figure}[h]
     \centering
     \includegraphics[width=\figsizetext]{Q2/08-anova-interaction-plot.png}
     \caption{ANOVA Interaction Plot}

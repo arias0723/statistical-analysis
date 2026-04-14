@@ -5,11 +5,11 @@
 \section{Questions 1} 
 \label{cha:q1}
 
-\subsection[Q1-a]{Import data set to R assigning the type of each variable correctly}
+\subsection{Q1-a}
 
 We casted to factor both the string types ["Model", "SalesRegion"] and the very repetitive columns ["NumberofEngines", "EngineType"]. We considered casting also "ProductionYear", but in later calculation as the median was required, so we decided to leave as is (numerical).
 
-\subsection[Q1-b]{Summarize the variables Price, Fuel Consumption first for the all data and then for the groups of Engine Type}
+\subsection{Q1-b}
 
 We reported the result of the summaries of both Price and Fuel Consuption in the tables \ref{tab:q10} and \ref{tab:q11}, while an histogram is in figure \ref{fig:q10}
 
@@ -71,25 +71,27 @@ Here are the same summaries but based on the Engine Type (Table \ref{tab:q12} an
     \label{fig:q11}
 \end{figure}
 
-\subsection[Q1-c]{Test whether Fuel Consumption is affected from the Engine Type of the plane. Check the assumptions and visualize the relationship between these two characteristics} 
+\subsection{Q1-c} 
 
-\begin{figure}[H]
+\begin{figure}[h]
     \centering
-    \includegraphics[width=\figsizetext]{Q1/05-ttest-by-engine.png}
+    \includegraphics[width=0.5\textwidth]{Q1/05-ttest-by-engine.png}
     \caption{T-test results for Fuel Consumption by Engine Type} 
     \label{fig:q14}
 \end{figure}
 
-We performed a t-test and obtained a p-value, the results can be found in the figure  \ref{fig:q14}. Since the p-value is $<$ 0.05, we reject the null hypothesis and conclude that there is a significant difference in mean fuel consumption between the engine types. Furthermore we used a visual interpretation to be sure about the result as the number of observation made the test not very significant (figures \ref{fig:q12} and \ref{fig:q13}).
+We performed a t-test and obtained a p-value, the results can be found in the figure  \ref{fig:q14}. 
+Since the p-value is $<$ 0.05, we reject the null hypothesis and conclude that there is a significant difference in mean fuel consumption between the engine types. 
+Furthermore we used a visual interpretation to be sure about the result as the number of observation made the test not very significant (figures \ref{fig:q12} and \ref{fig:q13}).
 
-\begin{figure}[H]
+\begin{figure}[h]
     \centering
     \includegraphics[width=\figsizetext]{Q1/03-summary-by-type2.png}
     \caption{Comparing distributions}
     \label{fig:q12}
 \end{figure}
 
-\begin{figure}[H]
+\begin{figure}[h]
     \centering
 \includegraphics[width=\figsizetext]{Q1/04-boxplot-by-type.png}
     \caption{Boxplot is best for comparing a continuous variable across categories} 
@@ -104,7 +106,7 @@ We performed a t-test and obtained a p-value, the results can be found in the fi
     \item Variance was addressed by using the default robust t-test in R (Welch's t-test).
 \end{itemize}
 
-\subsection[Q1-d]{Construct 95\% confidence intervals for the mean of two groups and interpret them} 
+\subsection{Q1-d} 
 
 \begin{itemize}
     \item We are 95\% confident 
@@ -115,17 +117,17 @@ We performed a t-test and obtained a p-value, the results can be found in the fi
 
 The two intervals do NOT overlap. This provides visual evidence that the mean Fuel Consumption differs significantly between the two engine types.
 
-\subsection[Q1-e]{Check the association between Model and Sales Region in the whole sample using proper method and interpret your findings}
+\subsection{Q1-e}
 
 To check the association between the 2 categories we used the chi square as the two types of variable needed it.
 
 The obtained p-value $>$ 0.05 ($\sim$0.73), so we fail to reject the null hypothesis and conclude that there is no statistically significant association between Model and Sales Region. The airplane models are distributed similarly across sales regions.
 
-\subsection[Q1-f]{Filter your data only considering $Bombardier CRJ200$ and $Cessna 172$ model airplanes}
+\subsection{Q1-f}
 
 Here we applied a simple filter and removed the empty buckets. this way we obtained a clean dataset with only the 2 models.
 
-\subsection[Q1-g]{Check the distribution of Price across two categories of Engine type (You can apply transformation if you think it is required)}
+\subsection{Q1-g}
 
 Here we applied a transformation to the price (log) since it appeared to be completely left-skewed. visually we can clearly conclude that there is a significant difference of Price between the two types of Engines. Data can be visualized in figures \ref{fig:q15} and \ref{fig:q16}
 
@@ -143,11 +145,11 @@ Here we applied a transformation to the price (log) since it appeared to be comp
     \label{fig:q16}
 \end{figure}
 
-\subsection[Q1-h]{Categorize the variable Price into two categories as "low" and "High" by cutting from the median and save it as a new variable into your data frame}
+\subsection{Q1-h}
 
 To compute the categorization of price we first calculated the median and then applied it to a new variable: $Price\_Category$.
 
-\subsection[Q1-i]{Cross classify model and price categories and interpret the conditional probabilities}
+\subsection{Q1-i}
 
 Row proportions P(PriceCategory $\vert$ Model) table shows (table \ref{tab:q13}), for each model, what proportion of its airplanes fall into "Low" vs "High" price. Since $Bombardier CRJ200$ (Turbofan) has much higher prices than $Cessna 172$ (Piston), we expect nearly all $Bombardier CRJ200$ to be in the "High" category and nearly all $Cessna 172$ to be in the "Low" category. Nevertheless, using the median as a separator, some $Bombardier CRJ200$ still fell into the "low" category because the number of the first model is slightly higher than that of the second model..
 
@@ -181,13 +183,13 @@ Column proportions P(Model $\vert$ PriceCategory) table shows (table \ref{tab:q1
     \label{tab:q14}
 \end{table}
 
-\subsection[Q1-j]{Is there an association between the model of the airplane and its price level. Analyze it by using proper statistical method} 
+\subsection{Q1-j} 
 
 we applied the chi square test and obtained a p-value as a result.
 
 The p-value $<$ 0.05, so we reject the null hypothesis and conclude that there is a statistically significant association between airplane model and price level. Given that $Bombardier CRJ200$ (Turbofan) costs millions while $Cessna 172$ (Piston) costs hundreds of thousands, we expect a very small p-value, confirming a strong association.
 
-\subsection[Q1-k]{Cross classify the variables Model and Sales region. Interpret the conditional probabilities and then test whether there is an association between these two characteristics}
+\subsection{Q1-k}
 
 P(SalesRegion $\vert$ Model) (row proportions, table \ref{tab:q15}) shows the distribution of sales regions for each model. Both models have similar proportions across regions, so we conclude that the sales region is independent of the model.
 

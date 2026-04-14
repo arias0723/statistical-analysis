@@ -1,11 +1,10 @@
 % ------------------------------------------------------------------------------
 % section 03
 % ------------------------------------------------------------------------------
-\newpage
 \section{Questions 3}
 \label{cha:q3}
 
-\subsection[Q3-a]{Consider the numerical variables in the data set and find the best SIMPLE linear regression model to predict the prices. Test the assumptions and use transformations if it is required. Explain why the model you find is the best simple linear regression model and interpret the model coefficients.}
+\subsection{Q3-a}
 
 \begin{figure}[htbp]
     \centering
@@ -79,7 +78,7 @@ We selected \texttt{RangeKm} (along with its quadratic transformation) as the be
     \item \textbf{Slope for RangeKm ($\beta_1$ \& $\beta_2$)}: For each additional \texttt{RangeKm}, the $\log(\text{Price})$ increases by $\beta_1$ and $\beta_2$, meaning Price increases exponentially by $e^{\beta_2}$.
 \end{itemize}
 
-\subsection[Q3-b]{Fit a multivariate linear regression model with the most important two (numerical) variables. Use transformations if it is needed and test all the assumptions. Then compare this model to the simple linear regression model that you fit in (a). Which one is a better model? Why?}
+\subsection{Q3-b}
 
 First, we checked a model against all our top variables: \texttt{Capacity}, \texttt{RangeKm}, \texttt{FC}, and \texttt{Age}, table \ref{tab:q3_05}.
 
@@ -184,7 +183,7 @@ The assumptions can be visualized in figure \ref{fig:q3_08}.
     \label{fig:q3_08}
 \end{figure}
 
-\subsection[Q3-c]{Encode the variable model into three categories considering whether the plane is ``Airbus'', ``Boeing'' or ``Other''. Now add this model factor to the regression model you have chosen in subsection (b). Interpret the coefficients and overall summary of the model. Compare the model in subsection (b) with the model that has an additional factor. Which one would you choose? Why?}
+\subsection{Q3-c}
 
 We added \texttt{ModelCat} to our selected model. However, introducing \texttt{ModelCat} made \texttt{FC} statistically insignificant. We dropped \texttt{FC} to simplify the model, yielding: \texttt{lm(Price \textasciitilde{} RangeKm\_2 * ModelCat + RangeKm)}. lm result is reported in table \ref{tab:q3_09}, while the residuals are in figure \ref{fig:q3_10}.
 
@@ -256,7 +255,7 @@ The Residual vs Fitted plot shows good results.
     \item We selected this interaction model (Model C) as our best model.
 \end{itemize}
 
-\subsection[Q3-d]{Test the validity of the final model that you choose.}
+\subsection{Q3-d}
 
 \begin{figure}[htbp]
     \centering

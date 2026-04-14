@@ -1,11 +1,10 @@
 % ------------------------------------------------------------------------------
 % section 04
 % ------------------------------------------------------------------------------
-\newpage
 \section{Questions 4}
 \label{cha:q4}
 
-\subsection[Q4-a]{Apply PCA analysis on airplane data and interpret the results of the analysis.}
+\subsection{Q4-a}
 
 % We applied a log transformation to the Price variable, consistent with the methodology in Q3, even though it was not utilized directly as an input for the PCA.
 
@@ -70,7 +69,7 @@ The first dimension captures the scale and performance of the aircraft, and seem
     \item \textbf{Linearity} (Figure \ref{fig:q4_08}): PCA assumes linear relationships between variables. The scatterplot matrix confirms a strong linear trend between Capacity and RangeKm, though relationships with other variables are less defined.
 \end{itemize}
 
-\subsection[Q4-b]{Find the best linear model to predict price on the principal components. Do not forget to test the assumptions and the validity of the model.}
+\subsection{Q4-b}
 
 We evaluated several Principal Component Regression (PCR) specifications, concluding that the quadratic model (Table \ref{tab:q4_09}) offers the most balanced performance.
 
@@ -115,7 +114,7 @@ The model achieved a Mean Squared Error (MSE) of 0.53. While there is visible di
 
 As seen in the plot, the observations are clustered into four distinct groups, maybe because of airplanes models.
 
-\subsection[Q4-c]{Would you prefer the linear model that you fit in the final step of question 3 or this one? Explain why.}
+\subsection{Q4-c}
 
 We prefer the Multiple Linear Regression (MLR) model from Question 3. While the Principal Component Regression (PCR) model is efficient using only two predictors ($PC1$ and $PC1^2$) to explain the data, the MLR model provides a much higher level of precision.
 
