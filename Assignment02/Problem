@@ -1,0 +1,23 @@
+Queue Model Implementation - Practical Session
+
+Today we begin the practical implementation phase of queuing models. You will build a functional queue model based on Kendall's notation, which is the standard framework for describing and analyzing queueing systems.
+
+
+Kendall's Notation Overview
+
+Kendall's notation uses the format A/S/c/N/D to fully characterize a queue:
+Parameter
+A: Distribution of arrival times -> M (Markovian/Exponential), D (Deterministic), G (General)
+S: Distribution of service times -> M (Exponential), D (Deterministic), G (General)
+c: Number of servers -> 1, 2, 5, ... (integer values)
+N: System capacity -> Maximum entities in system; omit if infinite
+D: Queue discipline (optional) -> FIFO (First-In-First-Out), LIFO (Last-In-First-Out), SIRO (Service-In-Random-Order)
+
+
+Core Requirements
+
+You must implement a modular queue system with the following characteristics:
+Flexible parametrization: Your model must accept any valid Kendall notation parameters (A, S, c, N, D(optional))
+Modularity: The system must be designed so that different queue types can be connected together. This is crucial, you'll expand to multi-stage systems in the next session.
+Event-driven architecture: Use Event Scheduling as your simulation methodology
+Validation mechanism: Implement a GPSS-compatible model that can validate your results against theoretical predictions or alternative simulation approaches

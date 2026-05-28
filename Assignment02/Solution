@@ -1,0 +1,50 @@
+I can help you understand these concepts and build a modular queue model in Python step by step. Here is a breakdown of the core concepts, followed by a Python implementation using an Event-Driven Architecture.
+
+1. Understanding the Concepts
+Kendall's Notation (A/S/c/N/D)
+
+A (Arrival times): How frequently entities arrive. M means Markovian (Exponential distribution), D means Deterministic (constant time), G means General.
+S (Service times): How long it takes to process an entity. Follows the same letters as A.
+c (Servers): The number of parallel servers processing entities.
+N (Capacity): The maximum number of entities allowed in the system (queue + inside service). If a new entity arrives when full, it is dropped.
+D (Discipline): Order of processing (e.g., FIFO = First-In-First-Out, LIFO = Last-In-First-Out).
+Event-Driven Architecture (Event Scheduling) Instead of advancing simulation time step-by-step (e.g., tick by tick), we jump directly to the time when the next event happens. We maintain an "Event Calendar" (a priority queue ordered by time). The two main events in a basic queue are:
+
+Arrival: An entity enters the system. We schedule the next arrival and handle the current entity setup (either goes into service or a waiting queue).
+Departure: An entity finishes service. We free up the server. If there's anyone waiting in the queue, they immediately begin service.
+Modularity
+To connect queues, a Departure from Queue 1 can simply trigger an Arrival into Queue 2 instead of leaving the system completely.
+
+2. Implementation
+Let's build a modular simulation framework in Python. We'll use the heapq library to act as our priority queue for events.
+
+Created queue_model.py
+
+I have created a Python implementation step-by-step based on the requirements from your assignment document.
+
+Concepts Breakdown
+Kendall's Notation (A/S/c/N/D):
+
+Gives a standard way to classify queues.
+A & S (Arrival & Service distributions): Represented as functions (e.g., random.expovariate for an M (Markovian) process).
+c (Servers), N (Capacity), D (Discipline): Controlled via initialized properties in our QueueModel.
+Event-Driven Architecture:
+
+The simulation works by scheduling events in the future and jumping time straight to the next event.
+A Simulator handles a priority queue of events sorted by time.
+The base events are Arrival and Departure.
+Modularity:
+
+The requirement is that queue systems can be connected together (e.g., entity leaves Queue A and enters Queue B).
+We achieve this with a next_queue property. Whenever an entity finishes in Queue 1, it immediately generates an arrival event in Queue 2.
+Python Implementation (queue_model.py)
+I have placed this code in queue_model.py.
+
+Here is a quick overview of what it does:
+
+Event & Simulator Classes: Manages the event calendar (Priority Queue). It jumps the clock to the next event time.
+QueueModel Class:
+Takes functions for arrival_dist and service_dist so it can swap between M (exponential), D (deterministic), etc.
+Handles the capacity (N), dropping objects if full.
+Supports different disciplines (FIFO, LIFO, SIRO).
+Chains to a next_queue seamlessly to allow multi-stage routing.
