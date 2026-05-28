@@ -1,0 +1,58 @@
+
+\documentclass[11pt]{article} 
+
+\usepackage{projectreport}
+\usepackage{setspace}
+\usepackage{placeins}
+
+\newcommand{\nameone}{Joel González Jiménez}
+\newcommand{\nametwo}{Jose Arias Perez}
+\newcommand{\namethree}{Quentin Meneghini}
+\newcommand{\course}{STATISTICAL MODELLING AND DESIGN OF EXPERIMENTS}
+\newcommand{\projecttitle}{Assignment 1}
+\newcommand{\submissiondate}{14th April 2026}
+
+
+% ------------------------------------------------------------------------------
+% Document
+% ------------------------------------------------------------------------------
+
+
+\begin{document}
+
+\maketitle
+
+\newpage
+\tableofcontents
+
+% ------------------------------------------------------------------------------
+% Main matter
+% Chapters are added to the document using the \include{chapterx} command
+% ------------------------------------------------------------------------------
+\newpage
+\setcounter{page}{0}
+\pagenumbering{arabic}
+
+\setstretch{0.8}
+
+\begingroup
+    \input{chapters/00_Introduction}
+    \input{chapters/01_Q1}
+    \input{chapters/02_Q2}
+    \input{chapters/03_Q3}
+    \input{chapters/04_Q4}
+    \input{chapters/05_Conclusion}
+\endgroup
+
+% ------------------------------------------------------------------------------
+% Reference list
+% ------------------------------------------------------------------------------
+% \addcontentsline{toc}{chapter}{References}
+% \renewcommand\bibname{References}
+% \printbibliography
+
+% ------------------------------------------------------------------------------
+% Appendices
+% ------------------------------------------------------------------------------
+\input{appendix}
+\end{document}

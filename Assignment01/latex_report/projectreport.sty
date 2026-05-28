@@ -1,0 +1,90 @@
+% ------------------------------------------------------------------------------
+% Mathematics Project Report Template style file
+% by Jon Shiach 2019
+% Manchester Metropolitan University
+% ------------------------------------------------------------------------------
+
+\ProvidesPackage{projectreport}
+\NeedsTeXFormat{LaTeX2e}
+
+% ------------------------------------------------------------------------------
+% Packages
+% ------------------------------------------------------------------------------
+\usepackage[utf8]{inputenc}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsthm}
+\usepackage{hyperref}
+\usepackage{parskip}
+\usepackage{float}
+\usepackage{booktabs}
+\usepackage{caption}
+\usepackage{blindtext}
+\usepackage{tabularx}
+\usepackage{array}
+
+% ------------------------------------------------------------------------------
+% Page setup
+% ------------------------------------------------------------------------------
+\usepackage{geometry} 
+\geometry{a4paper, margin=1in, twoside}
+\usepackage{setspace}
+\doublespacing
+
+
+% ------------------------------------------------------------------------------
+% Headers and footers
+% ------------------------------------------------------------------------------    
+\usepackage{fancyhdr}
+\pagestyle{fancy}   
+\setlength{\headheight}{14.5pt}
+\renewcommand{\headrulewidth}{0.3pt}
+\renewcommand{\sectionmark}[1]{}
+\fancyhead{}
+\fancyhead[LO,LE]{\leftmark}
+
+% ------------------------------------------------------------------------------
+% Title page
+% ------------------------------------------------------------------------------
+\renewcommand{\maketitle}{
+    \thispagestyle{empty}
+    \begin{center}
+    	\vspace*{2cm}
+    	% \includegraphics[width = 7cm]{Images/Manchester_Met_University_Horizonal_black_logo} \par
+    	% \vspace{2cm}
+    	% \textbf{\Large{Facultad d'Informática de Barcelona}} \par
+    	% \vspace{1cm}
+    	
+    	\textbf{\Large \course} \par
+    	\vspace{1cm}
+    	\textbf{\Huge \projecttitle} \par
+    	\vspace{1cm}
+        \textbf{\LARGE{\nameone}}
+        
+        \textbf{\LARGE{\nametwo}}
+        
+        \textbf{\LARGE{\namethree}}
+    	\vfill 
+    	\textbf{\Large \submissiondate} \par
+        \par
+    	\vspace{1cm}
+    	\textbf{\Large Facultat d'Informàtica de Barcelona}
+    	\vspace{1cm}
+    \end{center}
+    
+    \pagenumbering{roman}
+    \setcounter{page}{0}
+}
+
+% ------------------------------------------------------------------------------
+% Tables
+% ------------------------------------------------------------------------------
+\newcolumntype{C}{>{\centering\arraybackslash}p{2cm}}
+\newcolumntype{P}{>{\centering\arraybackslash}p{3cm}}
+
+% ------------------------------------------------------------------------------
+% Figures
+% ------------------------------------------------------------------------------
+\newcommand{\figsizetext}{0.45\textwidth}
+\graphicspath{{../../}}

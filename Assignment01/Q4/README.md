@@ -9,7 +9,7 @@ To ensure a robust analysis, we performed the PCA using two functions: princomp(
 ![figure1](./eigen-val.png)  
 *Figure 1*
 
-![figure2](./eigen-values-plot.png)
+![figure2](./eigen-values-plot.png)  
 *Figure 2*
 
 ### Discussion of Variance and Selection Criteria
@@ -24,13 +24,13 @@ As shown in Figure 1, Principal Component 1 (PC1) accounts for 45.95% of the tot
 
 Balancing these methods, we would retain the first three components to ensure a comprehensive representation of the dataset’s variance.
 
-![figure3](./biplot-dots.png)
+![figure3](./biplot-dots.png)  
 *Figure 3*
 
-![figure4](./biplot.png)
+![figure4](./biplot.png)  
 *Figure 4*
 
-![figure5](./PCA.png)
+![figure5](./PCA.png)  
 *Figure 5*
 
 ### Interpretation of components
@@ -73,7 +73,7 @@ The first dimension captures the scale and performance of the aircraft, and seem
 ![figure9](./pcr.png)  
 *Figure 9*
 
-![figure10](./pcr-res.png)
+![figure10](./pcr-res.png)  
 *Figure 10*
 
 We evaluated several Principal Component Regression (PCR) specifications, concluding that the quadratic model (Figure 9) offers the most balanced performance.
@@ -97,8 +97,8 @@ We don't need to test collinearity with vif() because components are orthogonal 
 
 ### Validity
 
-![figure11](./pred.png)
-*Figure 11*
+![figure12](./pred.png)  
+*Figure 12*
 
 We performed a validation using an 80/20 train-test split. Figure 11 displays the relationship between the Actual Prices in the test set and the Prices Predicted by the model.
 

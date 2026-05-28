@@ -1,0 +1,125 @@
+% ------------------------------------------------------------------------------
+% section 04
+% ------------------------------------------------------------------------------
+\section{Questions 4}
+\label{cha:q4}
+
+\subsection{Q4-a}
+
+% We applied a log transformation to the Price variable, consistent with the methodology in Q3, even though it was not utilized directly as an input for the PCA.
+
+% To ensure a robust analysis, we performed the PCA using two functions: \texttt{princomp()} and \texttt{PCA()}. Both methods yielded identical results, identifying five principal components based on the calculated eigenvalues (table \ref{tab:q4_01}).
+
+% \begin{figure}[htbp]
+%     \centering
+%     \includegraphics[width=\figsizetext]{Q4/eigen-values-plot.png}
+%     \caption{Scree plot of eigenvalues}
+%     \label{fig:q4_02}
+% \end{figure}
+
+% \subsubsection*{Discussion of Variance and Selection Criteria}
+
+% As shown in table \ref{tab:q4_01}, Principal Component 1 (PC1) accounts for 45.95\% of the total variance, while PC2 and PC3 explain approximately 20\% each. To determine the optimal number of components to retain, we evaluated three standard criteria:
+
+% \begin{itemize}
+%     \item \textbf{80\% Variance Rule}: To capture at least 80\% of the information, we must retain the first three components, which collectively explain 85.96\% of the total variation.
+%     \item \textbf{Kaiser's Rule}: While PC1 and PC2 strictly meet this requirement, PC3 is a borderline case with an eigenvalue of 0.989 (see table \ref{tab:q4_01}). Given how close this value is to 1, retaining PC3 is statistically justifiable to meet our variance threshold.
+%     \item \textbf{Elbow Rule}: If we were to strictly follow the ``elbow'' or bend in the scree plot (see Figure \ref{fig:q4_02}), the most significant drop occurs after PC1.
+% \end{itemize}
+
+% Balancing these methods, we would retain the first three components to ensure a comprehensive representation of the dataset's variance.
+
+\begin{figure}[htbp]
+    \centering
+    \begin{minipage}{0.48\textwidth}
+        \centering
+        \includegraphics[width=1.2\linewidth]{Q4/PCA.png}
+    \end{minipage}
+    \hfill
+    \begin{minipage}{0.48\textwidth}
+        \centering
+        \includegraphics[width=1.2\linewidth]{Q4/biplot-dots.png}
+    \end{minipage}
+    \caption{PCA Correlation Circle with Price as a supplementary variable and PCA Biplot with individual observations}
+    \label{fig:q4_03}
+\end{figure}
+
+\subsubsection*{Interpretation of components}
+
+Figure \ref{fig:q4_03} provides a biplot that includes the individual observations. We can observe that the data points are spread across the first two components, clearly forming four distinct clusters.
+
+In Figure \ref{fig:q4_03}, we included Price as a supplementary variable (indicated by the blue dashed line). While Price was not used to calculate the principal components to avoid biasing the model, it is highly correlated with the first dimension. Specifically, it aligns closely with Capacity and RangeKm, confirming that higher-capacity, longer-range vehicles tend to have a higher price point, while being inversely related to FuelConsumption (FC).
+
+The first dimension captures the scale and performance of the aircraft, and seems to be the primary driver of Price. While the second dimension could represent the operational lifecycle of the airplane. Because the second dimension is orthogonal to the price, price is not affected by the operational lifecycle, age and Hourly Maintenance (HM).
+
+\subsubsection*{Interpretation of quadrants}
+
+\begin{itemize}
+    \item \textbf{Top-Right}: Large, high-range planes that are older and expensive to maintain.
+    \item \textbf{Bottom-Right}: Large, modern, high-range planes with relatively lower maintenance needs.
+    \item \textbf{Top-Left}: Small, fuel-efficient planes that are older and need a lot of work.
+    \item \textbf{Bottom-Left}: Small, modern, highly efficient planes (the entry-level newer models).
+\end{itemize}
+
+\subsubsection*{Assumptions}
+
+\begin{itemize}
+    \item \textbf{KMO Test} (Table \ref{tab:q4_06}): The overall KMO value is 0.533, which is below 0.6. Notably, Age shows the highest individual adequacy at 0.824.
+    \item \textbf{Bartlett's Test} (Table \ref{tab:q4_07}): Our result shows a p-value of 0 ($p < 0.05$), confirming that the variables are sufficiently related to justify PCA.
+    \item \textbf{Linearity} (Figure \ref{fig:q4_08}): PCA assumes linear relationships between variables. The scatterplot matrix confirms a strong linear trend between Capacity and RangeKm, though relationships with other variables are less defined.
+\end{itemize}
+
+\subsection{Q4-b}
+
+We evaluated several Principal Component Regression (PCR) specifications, concluding that the quadratic model (Table \ref{tab:q4_09}) offers the most balanced performance.
+
+Initially, we fitted a simple linear regression using only the first principal component (PC1), which captures the primary variance in Price (as shown in the Correlation Circle, Figure \ref{fig:q4_05}). While initial results were promising, the Residuals vs. Fitted plot revealed a distinct parabolic trend, signaling a violation of the linearity assumption. To address this, we introduced a quadratic term ($PC1^2$), which resulted in a substantial improvement in model fit (Figure \ref{fig:q4_10}). Both ANOVA (Partial F-test) and AIC comparisons statistically confirmed that the inclusion of the squared term was necessary to capture the non-linear relationship.
+
+Regarding the remaining components, we opted to exclude PC2 and PC3. PC2 is orthogonal to Price, offering no predictive power, while PC3 was primarily defined by Age and Hourly Maintenance (HM), variables which, in this specific dataset, showed weak correlation with the target. Even adding PC4 (mainly representing Fuel Consumption) showed some improvement in AIC, we ultimately chose to exclude it to prioritize model simplicity. By maintaining a simpler model, we reduce the risk of overfitting and ensure that the regression remains interpretable and generalizes effectively to new, out-of-sample data. PC5 was not utilized because of its low explanation in variance.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=\figsizetext]{Q4/pcr-res.png}
+    \caption{PCR Residuals Analysis}
+    \label{fig:q4_10}
+\end{figure}
+
+\subsubsection*{Assumptions}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\figsizetext]{Q4/pcr-assumptions.png}
+    \caption{PCR Assumptions Diagnostics}
+    \label{fig:q4_11}
+\end{figure}
+
+\begin{itemize}
+    \item \textbf{Normality} (Figure \ref{fig:q4_11} first and second plot): The histogram and Q-Q plot indicate that the residuals are generally normal but moderately left-skewed. While not a perfect bell curve, the large sample size invokes the Central Limit Theorem.
+    \item \textbf{Homoscedasticity} (Figure \ref{fig:q4_11} third plot): Although the Breusch-Pagan test suggests heteroscedasticity due to its extreme sensitivity to large samples, the Residuals vs Index plot shows a consistent spread across the entire range. We conclude the variance is sufficiently constant.
+    \item \textbf{Independence of errors}: The Durbin-Watson test yielded a p-value of 0.4675, failing to reject the null hypothesis of no autocorrelation.
+\end{itemize}
+
+\subsubsection*{Validity}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\figsizetext]{Q4/pred.png}
+    \caption{PCR Actual vs Predicted Prices}
+    \label{fig:q4_12}
+\end{figure}
+
+We performed a validation using an 80/20 train-test split. Figure \ref{fig:q4_12} displays the relationship between the Actual Prices in the test set and the Prices Predicted by the model.
+
+The model achieved a Mean Squared Error (MSE) of 0.53. While there is visible dispersion, this is a respectable result considering the model's simplicity. It relies on only two predictors (the first principal component and its quadratic term) to explain the majority of the price variation.
+
+As seen in the plot, the observations are clustered into four distinct groups, maybe because of airplanes models.
+
+\subsection{Q4-c}
+
+We prefer the Multiple Linear Regression (MLR) model from Question 3. While the Principal Component Regression (PCR) model is efficient using only two predictors ($PC1$ and $PC1^2$) to explain the data, the MLR model provides a much higher level of precision.
+
+The performance gap is most evident in the Mean Squared Error (MSE). The MLR model achieved an MSE of 0.071, whereas the PCR model produced a significantly higher error of 0.527. 
+
+Although the MLR model introduces more complexity by using six variables (including the interaction between Model and RangeKm) and is very probably overfitting, in this case, we prioritize predictive accuracy over simplicity of the PCR model.
+
+The only case we will prefer the PCR model is in case we have to predict Prices of airplanes from out-of-sample data and the airplane does not belong to a model in the trained dataset.

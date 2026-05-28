@@ -1,0 +1,13 @@
+% ------------------------------------------------------------------------------
+% section 05
+% ------------------------------------------------------------------------------
+\newpage
+\section*{Conclusion} 
+\addcontentsline{toc}{section}{Conclusion}
+\label{cha:conclusion}
+
+In this assignment, we analyzed the variables that affect airplane prices. We found a strong association between Price and variables like Model and RangeKm. We also confirmed that Engine Type significantly affects Fuel Consumption, while Sales Region has no significant effect on Price.
+
+To predict airplane prices, we evaluated two main approaches. First, we built a Multiple Linear Regression (MLR) model using RangeKm, its quadratic term, and Model categories. Second, we applied Principal Component Analysis (PCA) and fitted a Principal Component Regression (PCR) model using the first principal component.
+
+The MLR model achieved a Mean Squared Error (MSE) of 0.071 on the test set. The PCR model produced a higher MSE of 0.527. While the PCR model is simpler and uses fewer predictors, we prioritize predictive accuracy. Therefore, we selected the MLR model as the best approach to predict airplane prices for this dataset.

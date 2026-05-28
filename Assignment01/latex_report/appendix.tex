@@ -1,0 +1,118 @@
+% --------------------------------------------------
+% Appendices
+% --------------------------------------------------
+\appendix
+\newpage
+\section{Appendix section}
+
+\subsection*{Q4}
+
+\subsubsection*{Figures}
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=\figsizetext]{Q4/biplot.png}
+    \caption{PCA Variables Factor Map}
+    \label{fig:q4_04}
+\end{figure}
+
+\FloatBarrier
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\figsizetext]{Q4/linearity.png}
+    \caption{Linearity check via scatterplot matrix}
+    \label{fig:q4_08}
+\end{figure}
+
+\FloatBarrier
+
+\subsubsection*{Tables}
+
+\begin{table}[htbp]
+    \centering
+    \begin{tabular}{l r r r r r}
+        \hline
+         & \textbf{Dim.1} & \textbf{Dim.2} & \textbf{Dim.3} & \textbf{Dim.4} & \textbf{Dim.5} \\ 
+        \hline
+        Variance              & 2.298  & 1.011  & 0.989  & 0.693  & 0.009   \\
+        \% of var.            & 45.952 & 20.226 & 19.779 & 13.858 & 0.185   \\
+        Cumulative \% of var. & 45.952 & 66.177 & 85.957 & 99.815 & 100.000 \\
+        \hline
+    \end{tabular}
+    \caption{Eigenvalues}
+    \label{tab:q4_01}
+\end{table}
+
+\FloatBarrier
+
+\begin{table}[htbp]
+  \centering
+  \begin{tabular}{lr}
+    \toprule
+    \textbf{Variable} & \textbf{MSA} \\
+    \midrule
+    Capacity & 0.518 \\
+    RangeKm  & 0.520 \\
+    FC       & 0.633 \\
+    HM       & 0.563 \\
+    Age      & 0.825 \\
+    \midrule
+    \textbf{Overall KMO} & \textbf{0.533} \\
+    \bottomrule
+  \end{tabular}
+  \caption{Kaiser-Meyer-Olkin (KMO) Factor Adequacy}
+  \label{tab:q4_06}
+\end{table}
+
+\FloatBarrier
+
+\begin{table}[htbp]
+  \centering
+  \begin{tabular}{lr}
+    \toprule
+    \textbf{Statistic} & \textbf{Value} \\
+    \midrule
+    Chi-Squared ($\chi^2$)  & 52174.84 \\
+    Degrees of Freedom (df) & 10 \\
+    p-value                 & 0 \\
+    \bottomrule
+  \end{tabular}
+  \caption{Bartlett's Test of Sphericity}
+  \label{tab:q4_07}
+\end{table}
+
+\FloatBarrier
+
+\begin{table}[htbp]
+    \centering
+    \begin{tabular}{l r r r l}
+        \hline
+        \textbf{Coefficients} & \textbf{Estimate} & \textbf{Std. Error} & \textbf{t value} & \textbf{Pr($>$$|$t$|$)} \\ 
+        \hline
+        (Intercept) & 18.238469 & 0.009318 & 1957.36 & $< 2\text{e-}16$ *** \\
+        Comp.1      &  1.492014 & 0.004472 &  333.60 & $< 2\text{e-}16$ *** \\
+        Comp.1\_2   & -0.273755 & 0.002826 &  -96.87 & $< 2\text{e-}16$ *** \\
+        \hline
+        \multicolumn{5}{l}{\textbf{Model Statistics}} \\
+        \multicolumn{5}{l}{Residual standard error: 0.7435 on 12374 degrees of freedom} \\
+        \multicolumn{5}{l}{Multiple $R^2$: 0.9162, \quad Adjusted $R^2$: 0.9162} \\
+        \multicolumn{5}{l}{F-statistic: $6.767\text{e+}04$ on 2 and 12374 DF, \quad p-value: $< 2.2\text{e-}16$} \\
+        \hline
+    \end{tabular}
+    \caption{PCR Model Summary (Quadratic)}
+    \label{tab:q4_09}
+\end{table}
+
+\FloatBarrier
+
+\clearpage
+
+\subsection*{Use of AI}
+
+\begin{itemize}
+    \item Gemini (Pro): sentence enhancing, crosschecking personal assumptions
+\end{itemize}
+
+
+
