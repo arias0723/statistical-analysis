@@ -1,0 +1,234 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" id="Definitions_HPC" targetNamespace="http://bpmn.io/schema/bpmn" exporter="bpmn-js (https://demo.bpmn.io)" exporterVersion="18.16.0">
+  <bpmn:collaboration id="Collaboration_HPC">
+    <bpmn:participant id="Participant_HPC" name="HPC Cluster Scheduler Simulation" processRef="Process_HPC" />
+  </bpmn:collaboration>
+  <bpmn:process id="Process_HPC" isExecutable="false">
+    <bpmn:laneSet id="LaneSet_HPC">
+      <bpmn:lane id="Lane_Dispatcher" name="Arrivals / Dispatcher (exogenous job source + class routing)">
+        <bpmn:flowNodeRef>StartEvent_Job</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_Priority</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_Standard" name="Standard Queue Partition (A_std, S_std, c_std, N_std, D_std)">
+        <bpmn:flowNodeRef>Task_Execute_Std</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>EndEvent_Done_Std</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_Priority" name="Priority Queue Partition (A_pri, S_pri, c_pri, N_pri, D_pri)">
+        <bpmn:flowNodeRef>Task_Allocate</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Execute_Pri</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>EndEvent_Done_Pri</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+    <bpmn:startEvent id="StartEvent_Job" name="Job Arrival (A: rate &#955;)">
+      <bpmn:outgoing>Flow_Start_Gateway</bpmn:outgoing>
+      <bpmn:dataOutputAssociation id="DataOutputAssociation_Meta">
+        <bpmn:targetRef>DataObjectReference_Meta</bpmn:targetRef>
+      </bpmn:dataOutputAssociation>
+    </bpmn:startEvent>
+    <bpmn:dataObjectReference id="DataObjectReference_Meta" name="Job Metadata (class, length, cores)" dataObjectRef="DataObject_Meta" />
+    <bpmn:dataObject id="DataObject_Meta" />
+    <bpmn:exclusiveGateway id="Gateway_Priority" name="Priority?">
+      <bpmn:incoming>Flow_Start_Gateway</bpmn:incoming>
+      <bpmn:outgoing>Flow_Gateway_No</bpmn:outgoing>
+      <bpmn:outgoing>Flow_Gateway_Yes</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:task id="Task_Execute_Std" name="Execute (S_std, c_std)">
+      <bpmn:incoming>Flow_Gateway_No</bpmn:incoming>
+      <bpmn:outgoing>Flow_Execute_End_Std</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:endEvent id="EndEvent_Done_Std" name="Done">
+      <bpmn:incoming>Flow_Execute_End_Std</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:task id="Task_Allocate" name="Allocate nodes/cores">
+      <bpmn:incoming>Flow_Gateway_Yes</bpmn:incoming>
+      <bpmn:outgoing>Flow_Allocate_Execute</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Task_Execute_Pri" name="Execute (S_pri, c_pri)">
+      <bpmn:incoming>Flow_Allocate_Execute</bpmn:incoming>
+      <bpmn:outgoing>Flow_Execute_End_Pri</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:endEvent id="EndEvent_Done_Pri" name="Done">
+      <bpmn:incoming>Flow_Execute_End_Pri</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_Start_Gateway" name="instant" sourceRef="StartEvent_Job" targetRef="Gateway_Priority" />
+    <bpmn:sequenceFlow id="Flow_Gateway_No" name="No (prob 1 - p)" sourceRef="Gateway_Priority" targetRef="Task_Execute_Std" />
+    <bpmn:sequenceFlow id="Flow_Gateway_Yes" name="Yes (prob p)" sourceRef="Gateway_Priority" targetRef="Task_Allocate" />
+    <bpmn:sequenceFlow id="Flow_Execute_End_Std" name="instant" sourceRef="Task_Execute_Std" targetRef="EndEvent_Done_Std" />
+    <bpmn:sequenceFlow id="Flow_Allocate_Execute" name="instant" sourceRef="Task_Allocate" targetRef="Task_Execute_Pri" />
+    <bpmn:sequenceFlow id="Flow_Execute_End_Pri" name="instant" sourceRef="Task_Execute_Pri" targetRef="EndEvent_Done_Pri" />
+    <bpmn:textAnnotation id="TA_Arrival">
+      <bpmn:text>A: exponential interarrival times, mean 1/&#955; (Poisson arrivals)</bpmn:text>
+    </bpmn:textAnnotation>
+    <bpmn:textAnnotation id="TA_StdProb">
+      <bpmn:text>Routing No: standard class with probability 1 - p</bpmn:text>
+    </bpmn:textAnnotation>
+    <bpmn:textAnnotation id="TA_PriProb">
+      <bpmn:text>Routing Yes: priority class with probability p</bpmn:text>
+    </bpmn:textAnnotation>
+    <bpmn:textAnnotation id="TA_CapStd">
+      <bpmn:text>Capacity N_std: block/drop job when #jobs in node &#8805; N_std (discipline D_std)</bpmn:text>
+    </bpmn:textAnnotation>
+    <bpmn:textAnnotation id="TA_CapPri">
+      <bpmn:text>Capacity N_pri: block/drop job when #jobs in node &#8805; N_pri (discipline D_pri)</bpmn:text>
+    </bpmn:textAnnotation>
+    <bpmn:textAnnotation id="TA_Instant">
+      <bpmn:text>All sequence flows are 'instant' (no transit delay between nodes)</bpmn:text>
+    </bpmn:textAnnotation>
+    <bpmn:association id="Assoc_Arrival" sourceRef="StartEvent_Job" targetRef="TA_Arrival" />
+    <bpmn:association id="Assoc_StdProb" sourceRef="Gateway_Priority" targetRef="TA_StdProb" />
+    <bpmn:association id="Assoc_PriProb" sourceRef="Gateway_Priority" targetRef="TA_PriProb" />
+    <bpmn:association id="Assoc_CapStd" sourceRef="Task_Execute_Std" targetRef="TA_CapStd" />
+    <bpmn:association id="Assoc_CapPri" sourceRef="Task_Execute_Pri" targetRef="TA_CapPri" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_HPC">
+    <bpmndi:BPMNPlane id="BPMNPlane_HPC" bpmnElement="Collaboration_HPC">
+      <bpmndi:BPMNShape id="Participant_HPC_di" bpmnElement="Participant_HPC" isHorizontal="true">
+        <dc:Bounds x="160" y="80" width="980" height="600" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_Dispatcher_di" bpmnElement="Lane_Dispatcher" isHorizontal="true">
+        <dc:Bounds x="190" y="80" width="950" height="200" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_Standard_di" bpmnElement="Lane_Standard" isHorizontal="true">
+        <dc:Bounds x="190" y="280" width="950" height="200" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_Priority_di" bpmnElement="Lane_Priority" isHorizontal="true">
+        <dc:Bounds x="190" y="480" width="950" height="200" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="StartEvent_Job_di" bpmnElement="StartEvent_Job">
+        <dc:Bounds x="242" y="162" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="224" y="122" width="73" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="DataObjectReference_Meta_di" bpmnElement="DataObjectReference_Meta">
+        <dc:Bounds x="332" y="95" width="36" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="307" y="145" width="86" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_Priority_di" bpmnElement="Gateway_Priority" isMarkerVisible="true">
+        <dc:Bounds x="430" y="155" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="436" y="131" width="41" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Execute_Std_di" bpmnElement="Task_Execute_Std">
+        <dc:Bounds x="560" y="340" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_Done_Std_di" bpmnElement="EndEvent_Done_Std">
+        <dc:Bounds x="782" y="362" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="789" y="405" width="27" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Allocate_di" bpmnElement="Task_Allocate">
+        <dc:Bounds x="410" y="540" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Execute_Pri_di" bpmnElement="Task_Execute_Pri">
+        <dc:Bounds x="560" y="540" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_Done_Pri_di" bpmnElement="EndEvent_Done_Pri">
+        <dc:Bounds x="782" y="562" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="789" y="605" width="27" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="TA_Arrival_di" bpmnElement="TA_Arrival">
+        <dc:Bounds x="200" y="210" width="180" height="55" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="TA_StdProb_di" bpmnElement="TA_StdProb">
+        <dc:Bounds x="520" y="295" width="160" height="40" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="TA_PriProb_di" bpmnElement="TA_PriProb">
+        <dc:Bounds x="290" y="490" width="160" height="40" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="TA_CapStd_di" bpmnElement="TA_CapStd">
+        <dc:Bounds x="690" y="345" width="180" height="55" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="TA_CapPri_di" bpmnElement="TA_CapPri">
+        <dc:Bounds x="690" y="610" width="180" height="55" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="TA_Instant_di" bpmnElement="TA_Instant">
+        <dc:Bounds x="920" y="360" width="180" height="55" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_Start_Gateway_di" bpmnElement="Flow_Start_Gateway">
+        <di:waypoint x="278" y="180" />
+        <di:waypoint x="430" y="180" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="338" y="162" width="33" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Gateway_No_di" bpmnElement="Flow_Gateway_No">
+        <di:waypoint x="480" y="180" />
+        <di:waypoint x="520" y="180" />
+        <di:waypoint x="520" y="380" />
+        <di:waypoint x="560" y="380" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="528" y="286" width="74" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Gateway_Yes_di" bpmnElement="Flow_Gateway_Yes">
+        <di:waypoint x="455" y="205" />
+        <di:waypoint x="455" y="580" />
+        <di:waypoint x="510" y="580" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="424" y="490" width="61" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Execute_End_Std_di" bpmnElement="Flow_Execute_End_Std">
+        <di:waypoint x="660" y="380" />
+        <di:waypoint x="782" y="380" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="704" y="362" width="33" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Allocate_Execute_di" bpmnElement="Flow_Allocate_Execute">
+        <di:waypoint x="510" y="580" />
+        <di:waypoint x="560" y="580" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="514" y="562" width="33" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Execute_End_Pri_di" bpmnElement="Flow_Execute_End_Pri">
+        <di:waypoint x="660" y="580" />
+        <di:waypoint x="782" y="580" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="704" y="562" width="33" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="DataOutputAssociation_Meta_di" bpmnElement="DataOutputAssociation_Meta">
+        <di:waypoint x="276" y="166" />
+        <di:waypoint x="332" y="135" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Assoc_Arrival_di" bpmnElement="Assoc_Arrival">
+        <di:waypoint x="260" y="198" />
+        <di:waypoint x="270" y="210" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Assoc_StdProb_di" bpmnElement="Assoc_StdProb">
+        <di:waypoint x="470" y="195" />
+        <di:waypoint x="560" y="295" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Assoc_PriProb_di" bpmnElement="Assoc_PriProb">
+        <di:waypoint x="450" y="200" />
+        <di:waypoint x="390" y="490" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Assoc_CapStd_di" bpmnElement="Assoc_CapStd">
+        <di:waypoint x="660" y="375" />
+        <di:waypoint x="710" y="370" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Assoc_CapPri_di" bpmnElement="Assoc_CapPri">
+        <di:waypoint x="660" y="585" />
+        <di:waypoint x="710" y="610" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>
