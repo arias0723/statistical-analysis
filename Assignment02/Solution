@@ -33,6 +33,7 @@ Event-Driven Architecture:
 The simulation works by scheduling events in the future and jumping time straight to the next event.
 A Simulator handles a priority queue of events sorted by time.
 The base events are Arrival and Departure.
+
 Modularity:
 
 The requirement is that queue systems can be connected together (e.g., entity leaves Queue A and enters Queue B).
