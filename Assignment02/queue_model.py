@@ -15,7 +15,9 @@ class QueueModel:
                  servers: int = 1,
                  capacity: float = float('inf'),
                  discipline: str = 'FIFO',
-                 next_queue: Optional['QueueModel'] = None):
+                 next_queue: Optional['QueueModel'] = None,
+                 t_age: Optional[float] = None,
+                 promote_to: Optional['QueueModel'] = None):
         self.sim = sim
         self.name = name
         self.arrival_dist = arrival_dist
@@ -24,13 +26,19 @@ class QueueModel:
         self.capacity = capacity
         self.discipline = discipline
         self.next_queue = next_queue
-        
+        # Aging / priority promotion (report SS_03, SD_03): a job that has
+        # waited longer than t_age is promoted into promote_to, bypassing that
+        # partition's admission gateway.
+        self.t_age = t_age
+        self.promote_to = promote_to
+
         self.queue = deque()
         self.busy_servers = 0
-        
+
         # Statistics
         self.entities_processed = 0
         self.entities_dropped = 0
+        self.entities_promoted = 0
         self.wait_times = []  # Track wait time for each job
         self.queue_lengths = []  # Track (time, queue_length) snapshots
         self.total_busy_time = 0.0  # Cumulative server busy time
@@ -52,12 +60,14 @@ class QueueModel:
         
         # Record queue length snapshot
         self.queue_lengths.append((self.sim.clock, len(self.queue)))
-        
-        # Check capacity
+
+        # Check capacity (N). Promoted jobs carry bypass_capacity and skip the
+        # admission gateway (report SS_03): they always enter.
+        bypass = entity.pop("bypass_capacity", False)
         total_in_system = len(self.queue) + self.busy_servers
-        if total_in_system >= self.capacity:
+        if not bypass and total_in_system >= self.capacity:
             self.entities_dropped += 1
-            return  # Entity is dropped
+            return  # Entity is blocked
 
         if self.busy_servers < self.servers:
             # Server is available, go straight to service
@@ -66,12 +76,14 @@ class QueueModel:
             self._schedule_departure(entity)
         else:
             # Wait in queue
-            if self.discipline == 'FIFO':
-                self.queue.append(entity)
-            elif self.discipline == 'LIFO':
+            if self.discipline == 'LIFO':
                 self.queue.appendleft(entity)
             else:
-                self.queue.append(entity)  # Default to FIFO
+                self.queue.append(entity)  # FIFO (and default)
+            # Arm the aging timer for this waiting job.
+            if self.t_age is not None and self.promote_to is not None:
+                self.sim.schedule(self.sim.clock + self.t_age, "Promotion",
+                                  self._handle_promotion, entity)
 
     def _schedule_departure(self, entity: dict):
         departure_time = self.sim.clock + self.service_dist()
@@ -110,6 +122,25 @@ class QueueModel:
             self._schedule_departure(next_entity)
         else:
             self.busy_servers -= 1
+
+    def _handle_promotion(self, event: Event):
+        """Fire the aging timer: promote the job if it is still waiting.
+
+        If the job already entered service (or already left) it is no longer in
+        the waiting deque, so the timer is a no-op.
+        """
+        entity = event.entity
+        # Locate the job in the waiting deque by identity.
+        idx = next((i for i, e in enumerate(self.queue) if e is entity), None)
+        if idx is None:
+            return  # Job already started service; nothing to promote.
+
+        del self.queue[idx]
+        self.entities_promoted += 1
+        # Bypass the target partition's admission gateway and inject now.
+        entity["bypass_capacity"] = True
+        self.promote_to.sim.schedule(self.sim.clock, "Promotion",
+                                     self.promote_to._handle_arrival, entity)
 
     def avg_wait_time(self) -> float:
         """Average wait time (excluding jobs still in queue)."""
@@ -154,58 +185,76 @@ class QueueModel:
             return 0.0
         return self.entities_dropped / total_arrivals
 
+    def blocking_probability(self) -> float:
+        """P_b: fraction of admission attempts blocked by the capacity gate."""
+        return self.drop_rate()
+
 
 class Router:
-    """Routes jobs to multiple queues based on a probability distribution.
-    
-    Implements the Dispatcher lane from BPMN: exogenous arrivals split
-    between Standard and Priority classes with probability (1-p) and p.
+    """Routes a single Poisson arrival stream across N partitions.
+
+    Implements the BPMN exclusive gateway: each exogenous job is routed to one
+    partition according to a categorical distribution over `weights`. For the
+    HPC model this distribution encodes walltime-based routing (with the
+    over-declaration bias toward Standard baked into the weights).
     """
     def __init__(self,
                  sim: Simulator,
-                 std_queue: QueueModel,
-                 pri_queue: QueueModel,
-                 prob_priority: float = 0.5,
+                 partitions: list,
+                 weights: list,
                  arrival_dist: Callable[[], float] = None):
         """Initialize the router.
-        
+
         Args:
-            sim: The Simulator instance
-            std_queue: Standard priority queue
-            pri_queue: Priority queue
-            prob_priority: Probability of routing to priority queue (0 to 1)
-            arrival_dist: Arrival time distribution for exogenous arrivals
+            sim: The Simulator instance.
+            partitions: List of QueueModel partitions to route into.
+            weights: Routing probabilities per partition (need not sum to 1;
+                they are normalised).
+            arrival_dist: Inter-arrival time distribution for exogenous jobs.
         """
+        if len(partitions) != len(weights):
+            raise ValueError("partitions and weights must have equal length")
         self.sim = sim
-        self.std_queue = std_queue
-        self.pri_queue = pri_queue
-        self.prob_priority = prob_priority
-        self.arrival_dist = arrival_dist or (lambda: 1.0)  # Default: 1 per unit time
-        
+        self.partitions = partitions
+        total = float(sum(weights))
+        self.weights = [w / total for w in weights]
+        self.arrival_dist = arrival_dist or (lambda: 1.0)
+
         self.total_arrivals = 0
+        self.routed = [0] * len(partitions)
 
     def start(self):
-        """Kick-start the arrival process."""
+        """Kick-start the exogenous arrival process."""
         first_arrival_time = self.sim.clock + self.arrival_dist()
-        self.sim.schedule(first_arrival_time, "ExogenousArrival", self._handle_exogenous_arrival)
+        self.sim.schedule(first_arrival_time, "ExogenousArrival",
+                          self._handle_exogenous_arrival)
+
+    def _pick_partition(self) -> int:
+        r = random.random()
+        cum = 0.0
+        for i, w in enumerate(self.weights):
+            cum += w
+            if r < cum:
+                return i
+        return len(self.weights) - 1
 
     def _handle_exogenous_arrival(self, event: Event):
-        """Handle exogenous job arrival and route to Standard or Priority."""
-        # Schedule next arrival
+        """Handle one exogenous job arrival and route it to a partition."""
+        # Schedule the next exogenous arrival.
         next_arrival_time = self.sim.clock + self.arrival_dist()
-        self.sim.schedule(next_arrival_time, "ExogenousArrival", self._handle_exogenous_arrival)
+        self.sim.schedule(next_arrival_time, "ExogenousArrival",
+                          self._handle_exogenous_arrival)
 
-        # Create job entity
-        job_id = self.total_arrivals
-        self.total_arrivals += 1
+        # Create the job entity.
         entity = {
-            "id": job_id,
+            "id": self.total_arrivals,
             "arrival_time": self.sim.clock,
-            "is_priority": random.random() < self.prob_priority
         }
+        self.total_arrivals += 1
 
-        # Route to appropriate queue
-        target_queue = self.pri_queue if entity["is_priority"] else self.std_queue
-        self.sim.schedule(self.sim.clock, "Transfer", target_queue._handle_arrival, entity)
+        idx = self._pick_partition()
+        self.routed[idx] += 1
+        self.sim.schedule(self.sim.clock, "Transfer",
+                          self.partitions[idx]._handle_arrival, entity)
 
 
