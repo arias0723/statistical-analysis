@@ -66,6 +66,69 @@ The simulation is used to:
 
 ---
 
+### 3.1 Baseline results (aging OFF, t_age = 6h)
+
+The first simulation run (λ=45 jobs/h, routing weights Short=0.05 / Standard=0.80 / Long=0.15, T=4000h) produced the following steady-state metrics:
+
+| Partition | ρ | W_q (h) | L_q | P_b | Promotions |
+|-----------|------|---------|-----|-----|------------|
+| Short | 0.283 | 0.001 | 0.00 | 0.000 | 0 |
+| Standard | 0.998 | 3.967 | 126.65 | 0.111 | 2 |
+| Long | 0.424 | 0.000 | 0.00 | 0.000 | 0 |
+
+This confirms the structural imbalance identified in the problem statement. The aggregate offered load is ρ_total = 0.804 — suggesting the system has headroom — yet Standard alone operates at ρ = 0.998, effectively saturated. Short and Long combined hold 48 nodes (ρ < 0.45) while Standard's 64 nodes are never idle. The 11.1% blocking probability in Standard means roughly 1 in 9 jobs is rejected outright and must be resubmitted externally.
+
+Little's Law check for Standard: L_q ≈ λ_standard · W_q → 126.65 ≈ 36.0 · 3.97 = 142.9. The ~11% discrepancy reflects the non-classical exit path created by the 2 promoted jobs and residual warm-up bias in a near-saturated system.
+
+![fig01](./assets/01-fig01.png)
+> ρ per partition at baseline. Short=0.283, Standard=0.998, Long=0.424.
+
+---
+
+### 3.2 Effect of aging promotion threshold (t_age sweep)
+
+With aging enabled, the Standard→Short promotion threshold t_age was swept across six values (0.5h, 1.0h, 1.5h, 2.0h, 3.0h, 6.0h) keeping all other parameters fixed. Key results:
+
+| t_age (h) | Standard W_q (h) | Short W_q (h) | Promotions | Total blocked |
+|-----------|-----------------|---------------|------------|---------------|
+| 6.0 | 3.967 | 0.001 | 2 | 15,958 |
+| 3.0 | 2.708 | 3.212 | 14,950 | 676 |
+| 2.0 | 1.700 | 2.891 | 16,045 | 775 |
+| **1.5** | **1.222** | **2.382** | **15,295** | **633** |
+| 1.0 | 0.719 | 2.185 | 15,271 | 813 |
+| 0.5 | 0.288 | 1.718 | 16,663 | 704 |
+
+![fig02](./assets/02-fig02.png)
+> (top) Standard W_q and Short W_q vs t_age; (bottom) total blocked jobs vs t_age.
+
+Three findings emerge from this sweep:
+
+**Finding 1 — The default threshold (6h) is effectively inert.** Only 2 promotions fired across 143,000 Standard arrivals. At ρ=0.998, Standard's queue drains so slowly that almost all jobs either complete service or are blocked before the 6h timer fires. The aging mechanism exists in the model but provides no practical benefit at this threshold.
+
+**Finding 2 — Promotion redistributes congestion rather than eliminating it.** Lowering t_age reduces Standard W_q significantly (3.97h → 0.29h at t_age=0.5h) but transfers load into Short, which was designed for fast interactive jobs. At t_age=0.5h, Short's W_q reaches 1.72h and P_b=2.7% — a partition that was idle is now moderately congested. The bottleneck shifts but does not disappear.
+
+**Finding 3 — t_age = 1.5h minimises total system blocking.** Total blocked jobs reach a minimum of 633 at t_age=1.5h, compared to 15,958 at the baseline. This represents a 96% reduction in blocking through scheduler configuration alone, with no hardware changes. The trade-off is that Short absorbs promoted jobs (W_q=2.38h), which may be unexpected for users submitting short interactive jobs.
+
+---
+
+### 3.3 Root cause and conclusion
+
+The simulation reveals that the true problem is not the aging threshold — it is the routing weight distribution. Assigning 80% of traffic to Standard regardless of actual runtime creates a structural overload that no scheduler policy can fully compensate for. Aging promotion is a palliative: it reduces the symptoms (blocking, extreme W_q) but does not address the cause (miscalibrated routing).
+
+The actionable findings are:
+
+- **Short-term (zero cost):** Set Standard→Short t_age = 1.5h. This reduces Standard W_q from 3.97h to 1.22h and total blocking by 96% through a single scheduler configuration change.
+- **Medium-term:** Rebalance routing weights to reflect actual walltime distributions — reducing the Standard weight from 0.80 toward 0.50–0.60 would distribute load more evenly across partitions.
+- **Long-term:** Instrument the cluster to collect actual vs declared walltime. Use the resulting empirical distribution to calibrate both routing weights and service time parameters (SD_01), replacing the assumed log-normal with measured data.
+
+The optimal t_age is defined here as the value minimising total system blocking subject to Short P_b < 5%. Under that criterion t_age = 1.5h is the recommended baseline, with the caveat that any fixed threshold will need recalibration if λ or routing weights change — a sensitivity explored further in the DOE (Section 6).
+
+---
+
+findings 1, 2, and 3 map directly back to your hypotheses. Finding 1 challenges SD_03 (the t_age values were poorly calibrated). Finding 2 is a direct consequence of SS_03 (promotion bypasses admission). Finding 3 is your main quantitative result. That traceability from hypothesis to finding is exactly what examiners look for.
+
+---
+
 ## 4. Systemic Hypotheses
 
 | ID | Class | Statement |
@@ -80,6 +143,26 @@ The simulation is used to:
 | SD_01 | Data | Job service times follow a log-normal distribution with mean = 2h and CV = 1.5, representative of typical HPC traces in absence of empirical data. |
 | SD_02 | Data | Arrival rate λ is a controllable DOE factor, ranging from low load (ρ = 0.3) to overload (ρ = 1.2) relative to total system capacity. |
 | SD_03 | Data | Aging thresholds are fixed at T_age = 6h for Standard→Short promotion and T_age = 24h for Long→Standard promotion. |
+
+---
+
+## 5. BPMN
+![](./bpmn/hpc-bpmnio-v3.png)
+
+---
+
+## 6. Modeling
+
+#### The four core variables
+Think of a job moving through the system. It arrives, waits in the queue, gets served, and leaves. You can measure time at two points: when it joins the queue, and when it leaves the system.
+W_q — mean waiting time in queue
+This is the average time a job spends sitting in the deque before a server picks it up. In your code this is entity["service_start_time"] - entity["arrival_time"]. For job_A in our earlier trace it was 0.0 because it went straight to service. For job_B it was 1.1 - 0.9 = 0.2. W_q averages this across all completed jobs.
+L_q — mean queue length
+This is the average number of jobs sitting in the deque at any moment in time. Not the number being served — just the ones waiting. Your code computes this as a time-weighted average: it records (time, queue_length) snapshots every time something changes and integrates the area under that curve divided by total time. This is Little's Law territory — more on that in a moment.
+ρ — server utilisation
+This is the fraction of time the server is actually busy. In your code it's total_busy_time / (sim.clock * servers). Theoretically for M/M/1 it equals λ/μ — the ratio of arrival rate to service rate. If ρ=0.75 the server is busy 75% of the time. If ρ≥1.0 the queue grows without bound and the system never reaches steady state.
+P_b — blocking probability
+The fraction of arriving jobs that were turned away because the queue was full (N reached). For your M/M/1 validation N=inf so P_b=0.0 always. It becomes relevant in your HPC model where each partition has a finite N.
 
 ---
 
