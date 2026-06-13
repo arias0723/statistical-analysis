@@ -74,7 +74,8 @@ def run_hpc_cluster(arrival_lambda: float = 45.0,
 
     standard = QueueModel(sim, "Standard", arrival_dist=None, service_dist=svc(),
                           servers=64, capacity=200, discipline='FIFO',
-                          t_age=(6.0 if aging else None),
+                          # t_age=(6.0 if aging else None),
+                          t_age=(3.0 if aging else None),
                           promote_to=(short if aging else None))
 
     long = QueueModel(sim, "Long", arrival_dist=None, service_dist=svc(),
@@ -98,7 +99,7 @@ def run_hpc_cluster(arrival_lambda: float = 45.0,
     print(f"  Routing weights:       Short={weights[0]}, Standard={weights[1]}, Long={weights[2]}")
     print(f"  System capacity:       {total_capacity:.2f} jobs/h  →  offered ρ_total = {rho_total:.3f}")
     print(f"  Aging promotion:       {'ON' if aging else 'OFF'}"
-          + (" (Std→Short @6h, Long→Std @24h)" if aging else ""))
+          + (f" (Std→Short @{standard.t_age}h, Long→Std @{long.t_age}h)" if aging else ""))
 
     print("\nRunning simulation...")
     router.start()
@@ -137,7 +138,7 @@ def run_single_queue_test():
 
     print(f"\nParameters: M/M/1 with λ={lambda_rate}, μ={mu_rate}")
     q.start_generator()
-    sim.run(until=5000.0)
+    sim.run(until=50000.0)
 
     rho = lambda_rate / mu_rate
     print("\nResults:")
@@ -153,5 +154,5 @@ def run_single_queue_test():
 
 
 if __name__ == "__main__":
-    run_single_queue_test()
+    # run_single_queue_test()
     run_hpc_cluster()

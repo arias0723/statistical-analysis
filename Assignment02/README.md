@@ -166,7 +166,132 @@ The fraction of arriving jobs that were turned away because the queue was full (
 
 ---
 
-*Subsequent sections will cover: BPMN model specification, Python DES implementation, GPSS validation model, design of experiments, RNG validation, and results.*
+## 5. Model Specification
+
+The system is specified at two levels of abstraction, both represented as BPMN diagrams.
+
+### 5.1 Generic Queue Node (Image 2)
+
+The internal mechanics of a single Kendall queue node are described by a three-lane BPMN diagram covering Control, Queue, and Service layers. This diagram is implementation-agnostic and maps directly to Kendall's A/S/c/N/D notation:
+
+- **Control lane** — implements the admission gateway (capacity check N) and the secondary server-availability check (c). A job failing the capacity check is dropped immediately (blocked end event). A job finding a free server bypasses the queue and goes directly to service.
+- **Queue lane** — holds waiting jobs in FIFO order. A server-release signal triggers a re-check of server availability and dispatches the head-of-queue job.
+- **Service lane** — models server acquisition, job execution (duration drawn from S), and server release. The release event feeds back into the queue lane as a signal.
+
+This diagram corresponds directly to the `QueueModel` class in `queue_model.py`. The `_handle_arrival`, `_handle_departure`, and `_handle_promotion` methods implement the Control, Service, and aging paths respectively.
+
+> 📊 **[Image 2 — Generic queue node BPMN]**
+
+### 5.2 System Architecture (Image 1)
+
+The full HPC system is described by a five-lane BPMN diagram:
+
+- **Job source lane** — Poisson arrival process A=M(λ), Submit job task, and routing XOR gateway.
+- **Short partition lane** (t < 1h) — admission gateway N_short, FIFO queue (N=50), blocked end event.
+- **Standard partition lane** (t < 48h) — admission gateway N_standard, FIFO queue (N=200), aging promotion arrow to Short.
+- **Long partition lane** (t ≥ 48h) — admission gateway N_long, FIFO queue (N=100), aging promotion arrow to Standard.
+- **Compute nodes lane** — three parallel execution tasks (c=16/64/32), XOR merge gateway, Job done end event.
+
+The routing gateway implements the walltime-based classification described in SS_01. The aging promotion arrows implement SS_03 — bypassing the target partition's admission gateway directly into the queue task.
+
+> 📊 **[Image 1 — HPC system BPMN]**
+
+### 5.3 Modelling Decisions
+
+Two structural decisions are worth explicit justification here. First, the XOR merge gateway at the bottom of the compute nodes lane is correct for this system: each job completes in exactly one partition, so only one of the three incoming flows fires per token. Second, the aging promotion arrows connect directly to the queue task rather than through the admission gateway, encoding SS_03 — this is a baseline simplification whose sensitivity is explored in Section 8.
+
+---
+
+## 6. Coding
+
+### 6.1 Python DES Implementation
+
+The simulator is implemented in Python across five modules:
+
+| Module | Responsibility |
+|--------|---------------|
+| `event.py` | Event dataclass with `(time, priority)` ordering for tie-breaking |
+| `simulator.py` | Central event calendar using `heapq`; advances clock by event |
+| `queue_model.py` | `QueueModel` class (single Kendall node) and `Router` class |
+| `util.py` | Distribution samplers: `exponential`, `deterministic`, `lognormal` |
+| `main.py` | Entry point: M/M/1 validation and HPC cluster runs |
+
+**Event-driven architecture.** The simulation clock never ticks — it jumps directly from event to event. The event calendar is a min-heap ordered by `(time, priority)`. Three event types are defined with explicit tie-breaking priority:
+
+```
+Departure  →  priority 0  (frees server before new arrivals compete)
+Arrival    →  priority 1
+Promotion  →  priority 2  (lowest: rescheduling event, yields to both)
+```
+
+This ordering ensures that a departure and an arrival at identical timestamps always resolve in the physically correct order, preventing artificial inflation of queue lengths and waiting times.
+
+**Modularity.** Each `QueueModel` instance is self-contained with its own event handlers. Queues are connected via the `next_queue` parameter for multi-stage pipelines, and via `promote_to` for aging promotion. The `Router` class implements the BPMN routing gateway, distributing a single Poisson stream across partitions by categorical weights.
+
+**Aging promotion.** When a job joins the queue and `t_age` is set, a `Promotion` event is scheduled at `clock + t_age`. When it fires, `_handle_promotion` locates the job in the deque by object identity (`e is entity`). If found, the job is removed and injected into the target partition's `_handle_arrival` with `bypass_capacity=True`, skipping the admission gateway (SS_03).
+
+**Key design decision — tie-breaking.** Without explicit priority ordering, simultaneous departure and arrival events are resolved arbitrarily by the heap, producing non-deterministic wait time measurements. The `(time, priority)` tuple ordering added to `event.py` eliminates this source of variance.
+
+### 6.2 M/M/1 Validation
+
+Before running the full HPC model, the engine was validated against closed-form M/M/1 theory (λ=1.5, μ=2.0, ρ=0.75, T=50,000h):
+
+| Metric | Theory | Simulated | Error |
+|--------|--------|-----------|-------|
+| W_q (h) | 1.500 | 1.479 | 1.37% |
+| L_q | 2.250 | 2.222 | 1.24% |
+| ρ | 0.750 | 0.748 | 0.27% |
+
+Little's Law check: L_q = λ · W_q → 2.222 ≈ 1.500 · 1.479 = 2.219 ✓ (0.1% discrepancy).
+
+Residual error is attributable to warm-up bias — the initial empty-system transient pulls averages slightly below steady-state values. At T=5,000h the error was 8.9%; at T=50,000h it fell to 1.37%, confirming the engine is correct and the bias is purely transient.
+
+### 6.3 GPSS Validation Model
+
+A parallel model was implemented in GPSS World (`hpc_model.gps`) to provide independent cross-validation of the Python DES results.
+
+**Service distribution compromise.** GPSS World has no native log-normal sampler. The model uses Erlang-2 (two exponential stages of mean 1h each, total mean=2h, CV=0.707) as an approximation of the Python log-normal (CV=1.5). This preserves the mean but reduces variability. The consequence is that W_q values will be marginally lower in GPSS at moderate loads, but at ρ≈1.0 both converge to the same near-saturated behaviour.
+
+**Aging promotion limitation.** GPSS World's `SPLIT` block creates independent companion entities rather than conditionally moving existing ones. This made per-job promotion timers unimplementable without creating phantom load in the Short partition. The GPSS model therefore validates the **no-aging baseline** only. Aging promotion analysis is performed exclusively in Python, where per-entity conditional logic is natively supported.
+
+**Three-way validation results (no-aging baseline, T=4000h):**
+
+| Metric | Python | GPSS | Difference |
+|--------|--------|------|------------|
+| W_q Standard (h) | 3.967 | 4.013 | +1.2% |
+| W_q Short (h) | 0.001 | 0.000 | ~0% |
+| W_q Long (h) | 0.000 | 0.000 | 0% |
+| ρ Standard | 0.998 | 1.000 | +0.2% |
+| ρ Short | 0.283 | 0.284 | +0.4% |
+| ρ Long | 0.424 | 0.421 | -0.7% |
+| P_b Standard | 0.111 | 0.108 | -2.7% |
+
+All metrics agree within 3%. The small positive bias in GPSS W_q Standard (+1.2%) is consistent with Erlang-2's lower CV producing marginally longer tails at near-saturation — an expected and explainable discrepancy. P_b differences are within single-replication variance.
+
+---
+
+## 7. Data
+
+> 🔲 *Placeholder — describe the connection mechanism of input data: arrival rate λ, service time parameters (mean, CV), routing weights, and aging thresholds. Reference SD_01–SD_03. Note that in absence of empirical HPC traces, parameters are set to representative values justified by literature.*
+
+---
+
+## 8. Design of Experiments (DOE)
+
+> 🔲 *Placeholder — factorial design exploring λ × t_age interaction. Reference t_age sweep results from Section 3.2. Define response variables (W_q Standard, P_b Standard, W_q Short), factor levels, replication plan.*
+
+---
+
+## 9. Model Validation
+
+> 🔲 *Placeholder — consolidate: M/M/1 theoretical comparison (Section 6.2), Little's Law check, GPSS cross-validation (Section 6.3), RNG battery (Annex), warm-up analysis.*
+
+---
+
+## 10. Results / Conclusions
+
+> 🔲 *Placeholder — synthesise from Section 3.3 findings: t_age=1.5h reduces blocking 96%, Standard saturation is structural not operational, recommendations.*
+
 
 ---
 

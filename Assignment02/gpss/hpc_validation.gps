@@ -1,0 +1,257 @@
+; ============================================================
+;  HPC Batch Queue System — GPSS World Model
+;  Report Section 6: GPSS validation of Python DES
+;
+;  System:   3-partition M/G/c/N/FIFO + aging
+;  Matches:  run_hpc_cluster() in Python queue_model.py
+;
+;  Parameters:
+;    lambda        = 45 jobs/h  (Poisson, mean IAT = 0.02222h)
+;    Service S     = Erlang-2, mean=2h (approx log-normal SD_01)
+;    Routing       = Short 5% / Standard 80% / Long 15%
+;    Short:        c=16, N=50
+;    Standard:     c=64, N=200, t_age=1.5h -> promotes to Short
+;    Long:         c=32, N=100
+;
+;  Note on service distribution:
+;    Python uses log-normal (mean=2h, CV=1.5).
+;    GPSS World has no native log-normal sampler.
+;    Erlang-2 preserves mean=2h but gives CV=0.707 (vs 1.5).
+;    W_q will differ slightly; rho and P_b should align closely.
+;    Document as modelling compromise SD_01 variant in report.
+;
+;  Output: OutputFile_HPC.TXT
+;    Columns: rep, wq_short, wq_standard, wq_long,
+;             rho_short, rho_standard, rho_long, pb_standard
+;
+;  Replications: 20
+;  Warm-up:      500h  (transient phase, report SH_warmup)
+;  Collection:   4000h (matches Python simulation clock)
+;  RNG seed:     Llavor = 11 * replication number
+; ============================================================
+
+
+; ============================================================
+;  EXPERIMENT CONTROLLER
+; ============================================================
+
+        IniValor EQU 1;
+
+EXPERIMENT MyExperiment() BEGIN
+  TEMPORARY Replica;
+
+  Open(2, "OutputFile_HPC.TXT");
+  Write(2, "rep,wq_short,wq_standard,wq_long,rho_short,rho_standard,rho_long,pb_standard");
+
+  Replica = 1;
+  WHILE (Replica <= 20) DO BEGIN
+    RunHPC(Replica);
+    Replica = Replica + 1;
+  END;
+
+  Close(2);
+END;
+
+
+; ============================================================
+;  PROCEDURE: RunHPC
+;  One replication: clear, seed RNG, warm-up, reset, collect.
+; ============================================================
+
+PROCEDURE RunHPC(NReplica) BEGIN
+  TEMPORARY Llavor;
+
+  Llavor = 11 # NReplica;
+  DoCommand("CLEAR OFF");               ; reset model structures
+  DoCommand(Catenate("RMULT ", Llavor)); ; seed RNG (report GNA section)
+  DoCommand("START 500,NP");            ; warm-up 500h, no stats
+  DoCommand("RESET");                   ; reset all statistics
+  DoCommand("START 4000,NP");           ; collect 4000h
+
+  Write(2, PolyCatenate(
+    NReplica,              ",",
+    MX$HPC_OUT(1,1),       ",",   ; W_q Short
+    MX$HPC_OUT(1,2),       ",",   ; W_q Standard
+    MX$HPC_OUT(1,3),       ",",   ; W_q Long
+    MX$HPC_OUT(1,4),       ",",   ; rho Short
+    MX$HPC_OUT(1,5),       ",",   ; rho Standard
+    MX$HPC_OUT(1,6),       ",",   ; rho Long
+    MX$HPC_OUT(1,7)               ; P_b Standard
+  ));
+END;
+
+
+; ============================================================
+;  OUTPUT MATRIX
+; ============================================================
+
+HPC_OUT    MATRIX  ,1,7
+; [1,1] W_q Short      [1,2] W_q Standard   [1,3] W_q Long
+; [1,4] rho Short      [1,5] rho Standard    [1,6] rho Long
+; [1,7] P_b Standard
+
+
+; ============================================================
+;  SERVER POOLS (STORAGE = c parallel servers per partition)
+; ============================================================
+
+SHORT_SRV  STORAGE  16    ; Short partition:    c=16 nodes
+STD_SRV    STORAGE  64    ; Standard partition: c=64 nodes
+LONG_SRV   STORAGE  32    ; Long partition:     c=32 nodes
+
+
+; ============================================================
+;  BLOCKING COUNTERS (for P_b Standard calculation)
+; ============================================================
+
+           INITIAL  X$STD_ARR,0    ; Standard arrival attempts
+           INITIAL  X$STD_BLK,0    ; Standard blocked jobs
+
+
+           SIMULATE
+
+
+; ============================================================
+;  ARRIVAL STREAM
+;
+;  Single Poisson source, lambda=45 jobs/h
+;  Mean inter-arrival time = 1/45 = 0.02222h
+;
+;  TRANSFER implements the BPMN routing XOR gateway.
+;  5% -> Short, 80% -> Standard, 15% -> Long.
+;  GPSS TRANSFER .FFF routes fraction FFF to label, rest falls through.
+;  Two-stage transfer achieves 3-way split:
+;    Stage 1: 5%  -> SHORT_ENTER  (Short partition)
+;    Stage 2: 84.2% of remainder -> STD_ENTER (Standard)
+;             0.80 / 0.95 = 0.8421
+;    Remainder -> LONG_ENTER (Long partition)
+; ============================================================
+
+           GENERATE  (Exponential(1,0,0.02222))  ; Poisson arrivals lambda=45
+
+           TRANSFER  .050,,SHORT_ENTER            ; 5%  -> Short
+           TRANSFER  .842,,STD_ENTER              ; 80% -> Standard
+           TRANSFER  ,LONG_ENTER                  ; 15% -> Long
+
+
+; ============================================================
+;  SHORT PARTITION
+;  c=16 nodes, N=50 capacity, FIFO discipline
+;
+;  Admission gateway (BPMN N_short ok?):
+;    TEST checks total jobs in system < N=50
+;    (jobs in queue + jobs in service)
+;  Service: Erlang-2 via two exponential stages, mean=2h total
+; ============================================================
+
+SHORT_ENTER
+           TEST L  (Q$SH_WAIT+S$SHORT_SRV),50,SH_BLOCKED  ; admission N=50
+           QUEUE   SH_WAIT             ; enter waiting line, start W_q timer
+           ENTER   SHORT_SRV          ; acquire node (waits if all 16 busy)
+           DEPART  SH_WAIT            ; node acquired: stop W_q timer
+           ADVANCE (Exponential(3,0,1.0))  ; service stage 1, mean=1h
+           ADVANCE (Exponential(4,0,1.0))  ; service stage 2, mean=1h (total=2h)
+           LEAVE   SHORT_SRV          ; release node -> triggers next waiting job
+           TERMINATE                  ; job exits system
+
+SH_BLOCKED TERMINATE                  ; blocked: job lost (report P_b)
+
+
+; ============================================================
+;  STANDARD PARTITION
+;  c=64 nodes, N=200 capacity, FIFO + aging at t_age=1.5h
+;
+;  Aging promotion (BPMN aging promotion arrow, SS_03):
+;    SPLIT creates a companion timer entity at job arrival.
+;    Timer advances 1.5h then checks if jobs still waiting.
+;    If yes, promotes head-of-queue job to Short bypass path.
+;    This mirrors Python _handle_promotion(): locate entity
+;    in deque by identity, remove, inject into Short.
+;
+;  Modelling compromise vs Python:
+;    Python promotes the specific job whose timer fired.
+;    GPSS promotes the current head-of-queue if any job waits.
+;    Behaviour is equivalent in expectation under FIFO discipline.
+;    Documented as SS_03 variant in report hypotheses.
+; ============================================================
+
+STD_ENTER
+           SAVEVALUE  STD_ARR+,1      ; count Standard arrival attempt
+           TEST L  (Q$STD_WAIT+S$STD_SRV),200,STD_BLK  ; admission N=200
+           SPLIT  1,STD_TIMER         ; spawn aging timer companion
+           QUEUE   STD_WAIT           ; enter waiting line
+           ENTER   STD_SRV           ; acquire Standard node
+           DEPART  STD_WAIT          ; node acquired: stop W_q timer
+           ADVANCE (Exponential(5,0,1.0))  ; service stage 1
+           ADVANCE (Exponential(6,0,1.0))  ; service stage 2
+           LEAVE   STD_SRV           ; release node
+           TERMINATE                 ; job done
+
+STD_BLK
+           SAVEVALUE  STD_BLK+,1     ; count blocked job
+           TERMINATE
+
+; --- Aging timer companion (spawned by SPLIT at job arrival) ---
+STD_TIMER
+           ADVANCE  1.5              ; wait t_age = 1.5h
+           TEST G   Q$STD_WAIT,0,TIMER_NOOP  ; any jobs still waiting?
+           TRANSFER ,PROMOTE_TO_SHORT         ; yes: promote head-of-queue
+
+TIMER_NOOP TERMINATE                 ; no jobs waiting: timer fires, no-op
+
+; --- Promotion bypass path (skips Short admission gateway, SS_03) ---
+PROMOTE_TO_SHORT
+           QUEUE   SH_WAIT           ; inject directly into Short wait line
+           ENTER   SHORT_SRV        ; acquire Short node
+           DEPART  SH_WAIT          ; stop W_q timer
+           ADVANCE (Exponential(3,0,1.0))
+           ADVANCE (Exponential(4,0,1.0))
+           LEAVE   SHORT_SRV
+           TERMINATE
+
+
+; ============================================================
+;  LONG PARTITION
+;  c=32 nodes, N=100 capacity, FIFO
+;  No aging promotion (t_age=24h rarely fires at this load)
+; ============================================================
+
+LONG_ENTER
+           TEST L  (Q$LONG_WAIT+S$LONG_SRV),100,LONG_BLK  ; admission N=100
+           QUEUE   LONG_WAIT
+           ENTER   LONG_SRV
+           DEPART  LONG_WAIT
+           ADVANCE (Exponential(7,0,1.0))   ; service stage 1
+           ADVANCE (Exponential(8,0,1.0))   ; service stage 2
+           LEAVE   LONG_SRV
+           TERMINATE
+
+LONG_BLK   TERMINATE
+
+
+; ============================================================
+;  STATISTICS COLLECTION TIMER
+;  Single entity generated at t=4000h collects all metrics
+;  into HPC_OUT matrix, then terminates the run.
+; ============================================================
+
+           GENERATE  4000            ; fires once at end of collection period
+
+           ; --- Waiting times ---
+           MSAVEVALUE HPC_OUT,1,1,QT$SH_WAIT    ; W_q Short   (h)
+           MSAVEVALUE HPC_OUT,1,2,QT$STD_WAIT   ; W_q Standard (h)
+           MSAVEVALUE HPC_OUT,1,3,QT$LONG_WAIT  ; W_q Long    (h)
+
+           ; --- Server utilisation (SR$ = fraction of storage busy) ---
+           MSAVEVALUE HPC_OUT,1,4,SR$SHORT_SRV  ; rho Short
+           MSAVEVALUE HPC_OUT,1,5,SR$STD_SRV    ; rho Standard
+           MSAVEVALUE HPC_OUT,1,6,SR$LONG_SRV   ; rho Long
+
+           ; --- Blocking probability Standard ---
+           ; P_b = blocked / total arrivals (SAVEVALUE counters)
+           MSAVEVALUE HPC_OUT,1,7,(X$STD_BLK/X$STD_ARR)
+
+           TERMINATE  1              ; decrement counter -> ends START
+
+           START  1
+

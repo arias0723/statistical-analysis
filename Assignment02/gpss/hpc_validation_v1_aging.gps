@@ -1,0 +1,108 @@
+        IniValor EQU 1;
+
+EXPERIMENT MyExperiment() BEGIN
+  TEMPORARY Replica;
+  Open(2, "OutputFile_HPC.TXT");
+  Write(2, "rep,wq_short,wq_standard,wq_long,rho_short,rho_standard,rho_long,pb_standard");
+  Replica = 1;
+  WHILE (Replica <= 20) DO BEGIN
+    RunHPC(Replica);
+    Replica = Replica + 1;
+  END;
+  Close(2);
+END;
+
+PROCEDURE RunHPC(NReplica) BEGIN
+  TEMPORARY Llavor;
+  Llavor = 11 # NReplica;
+  DoCommand("CLEAR OFF");
+  DoCommand(Catenate("RMULT ", Llavor));
+  DoCommand("START 500,NP");
+  DoCommand("RESET");
+  DoCommand("START 4000,NP");
+  Write(2, PolyCatenate(NReplica, ",", MX$HPC_OUT(1,1), ",", MX$HPC_OUT(1,2), ",", MX$HPC_OUT(1,3), ",", MX$HPC_OUT(1,4), ",", MX$HPC_OUT(1,5), ",", MX$HPC_OUT(1,6), ",", MX$HPC_OUT(1,7)));
+END;
+
+HPC_OUT    MATRIX  ,1,7
+
+SHORT_SRV  STORAGE  16
+STD_SRV    STORAGE  64
+LONG_SRV   STORAGE  32
+
+           INITIAL  X$SARR,0
+           INITIAL  X$SBLK,0
+
+           SIMULATE
+
+* Arrival stream: Poisson lambda=45, mean IAT=0.02222h
+           GENERATE  (Exponential(1,0,0.02222))
+           TRANSFER  .050,,SHORT_ENTER
+           TRANSFER  .842,,STD_ENTER
+           TRANSFER  ,LONG_ENTER
+
+* Short partition: c=16, N=50
+SHORT_ENTER TEST L   (Q$SH_WAIT+S$SHORT_SRV),50,SH_BLOCKED
+           QUEUE    SH_WAIT
+           ENTER    SHORT_SRV
+           DEPART   SH_WAIT
+           ADVANCE  (Exponential(3,0,1.0))
+           ADVANCE  (Exponential(4,0,1.0))
+           LEAVE    SHORT_SRV
+           TERMINATE
+
+SH_BLOCKED TERMINATE
+
+* Standard partition: c=64, N=200, aging t_age=1.5h
+STD_ENTER  SAVEVALUE  SARR+,1
+           TEST L   (Q$STD_WAIT+S$STD_SRV),200,STD_BLK
+           SPLIT    1,STD_TIMER
+           QUEUE    STD_WAIT
+           ENTER    STD_SRV
+           DEPART   STD_WAIT
+           ADVANCE  (Exponential(5,0,1.0))
+           ADVANCE  (Exponential(6,0,1.0))
+           LEAVE    STD_SRV
+           TERMINATE
+
+STD_BLK    SAVEVALUE  SBLK+,1
+           TERMINATE
+
+STD_TIMER  ADVANCE  1.5
+           TEST G   Q$STD_WAIT,0,TIMER_NOOP
+           TRANSFER ,PROMOTE_TO_SHORT
+
+TIMER_NOOP TERMINATE
+
+PROMOTE_TO_SHORT QUEUE  SH_WAIT
+           ENTER    SHORT_SRV
+           DEPART   SH_WAIT
+           ADVANCE  (Exponential(3,0,1.0))
+           ADVANCE  (Exponential(4,0,1.0))
+           LEAVE    SHORT_SRV
+           TERMINATE
+
+* Long partition: c=32, N=100
+LONG_ENTER TEST L   (Q$LONG_WAIT+S$LONG_SRV),100,LONG_BLK
+           QUEUE    LONG_WAIT
+           ENTER    LONG_SRV
+           DEPART   LONG_WAIT
+           ADVANCE  (Exponential(7,0,1.0))
+           ADVANCE  (Exponential(8,0,1.0))
+           LEAVE    LONG_SRV
+           TERMINATE
+
+LONG_BLK   TERMINATE
+
+* Statistics collection timer
+           GENERATE  4000
+           MSAVEVALUE HPC_OUT,1,1,QT$SH_WAIT
+           MSAVEVALUE HPC_OUT,1,2,QT$STD_WAIT
+           MSAVEVALUE HPC_OUT,1,3,QT$LONG_WAIT
+           MSAVEVALUE HPC_OUT,1,4,SR$SHORT_SRV
+           MSAVEVALUE HPC_OUT,1,5,SR$STD_SRV
+           MSAVEVALUE HPC_OUT,1,6,SR$LONG_SRV
+           MSAVEVALUE HPC_OUT,1,7,(X$SBLK/X$SARR)
+           TERMINATE  1
+
+           START  1
+
