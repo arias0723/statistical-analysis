@@ -44,6 +44,22 @@ class QueueModel:
         self.total_busy_time = 0.0  # Cumulative server busy time
         self.last_event_time = 0.0  # For busy time calculation
 
+    def reset_statistics(self):
+        """Reset all statistical counters without disturbing the model state.
+
+        Mirrors GPSS World's RESET command: the queue contents and busy
+        servers are preserved (the system stays in its current state), but
+        all accumulators are zeroed so that subsequent collection starts
+        from a warm, steady-state baseline.
+        """
+        self.entities_processed = 0
+        self.entities_dropped = 0
+        self.entities_promoted = 0
+        self.wait_times = []
+        self.queue_lengths = [(self.sim.clock, len(self.queue))]
+        self.total_busy_time = 0.0
+        self.last_event_time = self.sim.clock
+
     def start_generator(self):
         """Kickstarts the arrival process."""
         first_arrival_time = self.sim.clock + self.arrival_dist()
@@ -203,15 +219,6 @@ class Router:
                  partitions: list,
                  weights: list,
                  arrival_dist: Callable[[], float] = None):
-        """Initialize the router.
-
-        Args:
-            sim: The Simulator instance.
-            partitions: List of QueueModel partitions to route into.
-            weights: Routing probabilities per partition (need not sum to 1;
-                they are normalised).
-            arrival_dist: Inter-arrival time distribution for exogenous jobs.
-        """
         if len(partitions) != len(weights):
             raise ValueError("partitions and weights must have equal length")
         self.sim = sim
@@ -256,5 +263,3 @@ class Router:
         self.routed[idx] += 1
         self.sim.schedule(self.sim.clock, "Transfer",
                           self.partitions[idx]._handle_arrival, entity)
-
-
