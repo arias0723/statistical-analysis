@@ -388,18 +388,8 @@ TERMINATE                             → End event
 
 ---
 
-## Notes
+## Notes / TODO
 
-A few things worth flagging as you move forward. SS_03 is the hypothesis that will likely draw the most scrutiny — promoting into a full queue unconditionally is a strong assumption, and your professor may ask you to defend it or model a bounded version. Also note that SD_01's CV = 1.5 is a reasonable default but you should cite a source or justify it if you have access to any real HPC trace datasets (there are public ones from LLNL and ANL).
+- A few things worth flagging as you move forward. SS_03 is the hypothesis that will likely draw the most scrutiny — promoting into a full queue unconditionally is a strong assumption, and your professor may ask you to defend it or model a bounded version. Also note that SD_01's CV = 1.5 is a reasonable default but you should cite a source or justify it if you have access to any real HPC trace datasets (there are public ones from LLNL and ANL).
 
-The interesting thing to notice here is the relationship between c and traffic intensity ρ. Recall that ρ = λ / (c · μ), where μ is the service rate (1/mean service time). A partition with a high c can absorb a much higher arrival rate before becoming saturated. So giving Standard c=64 is essentially your model's way of saying "we know this partition will be hammered, so we provision it with the most resources." Whether that's enough resources is precisely what your simulation will answer.
-
-## TODO
-
-Looking at the full picture, I'd suggest three things:
-First — add a warm-up deletion mechanism to your Python code. Right now you run longer to wash out transient bias. The cleaner approach is to run a warm-up period, call a reset_statistics() method that zeros all counters, then start collecting. You already do this in GPSS (START 500,NP then RESET then START 4000,NP). Adding the same to Python makes the two implementations structurally equivalent and eliminates the residual 1.37% error in M/M/1 validation. This is maybe 10 lines of code.
-Second — the trace validation. The PDF says "Validate the TRACE" as requirement 5. You haven't done this yet. A trace is a step-by-step log of the first N events showing clock, event type, entity ID, queue length, and server status at each step. It proves the event logic is correct by manual inspection. Add a trace_mode flag to your simulator that prints the first 20–30 events in a table. Compare a few rows against hand calculation (like we did earlier with job_A, job_B at t=0.3, 0.9, 1.1).
-Third — your current routing model uses fixed weights rather than actual walltime classification. The BPMN says "route by walltime" but the Python code does _pick_partition() by categorical probability. This is fine and correctly documented as SD_02, but for extra credit you could generate actual walltime values per job (drawn from a distribution) and route deterministically by threshold — jobs with walltime < 1h go to Short, etc. This would make the Python model structurally faithful to the BPMN routing gateway rather than using a probabilistic approximation. It's not required but it would close the gap between the BPMN and the code.
-
-Summary of recommendations:
-ItemPriorityEffortImpactBPMN legend table (point 2)HighLowDirectly required by PDFTrace validation (point 4b)HighLowDirectly required by PDFWarm-up deletion in Python (point 4a)MediumLowCleaner validation numbersKeep Erlang-2 in GPSS, document (point 3)MediumNoneAlready doneLayered validation framing (point 1)MediumLowReport structure onlyWalltime-based routing (point 4c)LowMediumNice-to-have, not required
+- The interesting thing to notice here is the relationship between c and traffic intensity ρ. Recall that ρ = λ / (c · μ), where μ is the service rate (1/mean service time). A partition with a high c can absorb a much higher arrival rate before becoming saturated. So giving Standard c=64 is essentially your model's way of saying "we know this partition will be hammered, so we provision it with the most resources." Whether that's enough resources is precisely what your simulation will answer.
