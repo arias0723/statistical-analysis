@@ -1,6 +1,6 @@
 # HPC Batch Queue System — Simulation Report
 
-### Queue Model Implementation | Practical Session | Kendall Notation M/G/c/N/FIFO+aging
+### Queue Model Implementation | Practical Session | Kendall Notation M/G/c/N/FIFO
 
 ---
 
@@ -8,7 +8,7 @@
 
 This report presents the discrete-event simulation (DES) of an HPC (High-Performance Computing) batch queueing system modelled using Kendall's notation. The system of interest is a multi-partition cluster scheduler — analogous to SLURM — in which jobs arrive following a Poisson process and are routed to one of three partitions (Short, Standard, Long) based on their declared walltime. Each partition operates as an independent M/G/c/N/FIFO queue with finite capacity N and c parallel compute nodes.
 
-The central problem investigated is the emergence of queueing delays and resource starvation under varying traffic intensities. The simulation is implemented in Python using an event-driven architecture, validated against theoretical M/M/c Erlang-C predictions and an independent GPSS World model. A factorial design of experiments (DOE) explores the interaction between arrival rate, number of servers, and queue capacity across partitions. Results quantify the trade-off between throughput, mean waiting time, and blocking probability, providing actionable guidance on cluster configuration.
+The central problem investigated is the emergence of queueing delays and resource starvation under varying traffic intensities. The simulation is implemented in Python using an event-driven architecture, validated against theoretical M/M/c Erlang-C predictions and an independent GPSS World model. A factorial design of experiments (DOE) explores the interaction between arrival rate, routing weights, and per-partition server allocation. Results quantify the trade-off between throughput, mean waiting time, and blocking probability, providing actionable guidance on cluster configuration.
 
 ---
 
@@ -34,7 +34,8 @@ A job follows this sequence through the system:
 4. **Waiting** — the job waits in FIFO order until a compute node is free.
 5. **Execution** — the job occupies one node for a duration drawn from service distribution S.
 6. **Completion** — the node is released; the scheduler dispatches the next queued job.
-7. **Priority promotion (aging)** — jobs waiting beyond threshold T_age are promoted to the next higher partition, bypassing the admission gateway.
+
+> **Out of scope (baseline):** an aging-based *priority promotion* extension — where jobs waiting beyond a threshold are promoted to another partition — is deliberately excluded from this baseline model. It is specified and explored as future work in [Section 11](#11-further-analysis--proposed-improvements).
 
 ### 2.3 Kendall Parametrisation
 
@@ -46,9 +47,9 @@ Each partition is independently characterised as M/G/c/N/FIFO:
 | S (service) | G — Log-normal | HPC runtimes are right-skewed (SD_01) |
 | c (servers) | 16 / 64 / 32 | Short / Standard / Long node counts (SS_01) |
 | N (capacity) | 50 / 200 / 100 | Per-partition queue size limits (SS_02) |
-| D (discipline) | FIFO + aging | Default scheduler discipline with promotion (SH_02) |
+| D (discipline) | FIFO | Default scheduler discipline (SS_02) |
 
-The full system is an interconnected network of three M/G/c/N/FIFO+aging queues sharing a common Poisson arrival stream, differentiated by routing at entry.
+The full system is an interconnected network of three M/G/c/N/FIFO queues sharing a common Poisson arrival stream, differentiated by routing at entry.
 
 ---
 
@@ -62,57 +63,40 @@ The simulation is used to:
 
 - Quantify mean waiting time W_q and blocking probability P_b per partition as a function of ρ.
 - Identify the ρ threshold at which Standard-partition delays exceed an acceptable bound (W_q > 30 min).
-- Evaluate whether aging-based priority promotion effectively mitigates starvation.
-- Explore whether re-allocating servers across partitions (changing c) reduces overall W_q.
+- Evaluate whether **rebalancing the routing weights** (shifting load off Standard) relieves the bottleneck.
+- Explore whether **re-allocating servers across partitions** (changing c) reduces overall W_q and blocking.
 
-### 3.1 Baseline Results (aging OFF, t_age = 6h)
+### 3.1 Baseline Results
 
 The first simulation run (λ=45 jobs/h, routing weights Short=0.05 / Standard=0.80 / Long=0.15, T=4000h) produced the following steady-state metrics:
 
-| Partition | ρ | W_q (h) | L_q | P_b | Promotions |
-|-----------|------|---------|-----|-----|------------|
-| Short | 0.283 | 0.001 | 0.00 | 0.000 | 0 |
-| Standard | 0.998 | 3.967 | 126.65 | 0.111 | 2 |
-| Long | 0.424 | 0.000 | 0.00 | 0.000 | 0 |
+| Partition | ρ | W_q (h) | L_q | P_b |
+|-----------|------|---------|-----|-----|
+| Short | 0.283 | 0.001 | 0.00 | 0.000 |
+| Standard | 0.998 | 3.967 | 126.65 | 0.111 |
+| Long | 0.424 | 0.000 | 0.00 | 0.000 |
 
 This confirms the structural imbalance identified in the problem statement. The aggregate offered load is ρ_total = 0.804 — suggesting the system has headroom — yet Standard alone operates at ρ = 0.998, effectively saturated. Short and Long combined hold 48 nodes (ρ < 0.45) while Standard's 64 nodes are never idle. The 11.1% blocking probability in Standard means roughly 1 in 9 jobs is rejected outright.
 
 ![fig01](./assets/01-fig01.png)
 > ρ per partition at baseline. Short=0.283, Standard=0.998, Long=0.424.
 
-### 3.2 Effect of Aging Promotion Threshold (t_age sweep)
+### 3.2 Root Cause and Levers
 
-With aging enabled, the Standard→Short promotion threshold t_age was swept across six values (0.5h, 1.0h, 1.5h, 2.0h, 3.0h, 6.0h) keeping all other parameters fixed:
+The baseline isolates the cause cleanly: the problem is the **routing-weight distribution**, not the raw amount of hardware. Assigning 80% of traffic to Standard regardless of actual runtime creates a structural overload while 48 nodes in Short and Long sit largely idle. Two levers can act on this imbalance directly, and both are studied in the DOE (Section 8):
 
-| t_age (h) | Standard W_q (h) | Short W_q (h) | Promotions | Total blocked |
-|-----------|-----------------|---------------|------------|---------------|
-| 6.0 | 3.967 | 0.001 | 2 | 15,958 |
-| 3.0 | 2.708 | 3.212 | 14,950 | 676 |
-| 2.0 | 1.700 | 2.891 | 16,045 | 775 |
-| **1.5** | **1.222** | **2.382** | **15,295** | **633** |
-| 1.0 | 0.719 | 2.185 | 15,271 | 813 |
-| 0.5 | 0.288 | 1.718 | 16,663 | 704 |
+- **Routing weights** — shifting weight off Standard (e.g. from 0.80 toward 0.50–0.60) lowers Standard's offered ρ and should reduce both W_q and P_b, at the cost of loading the other partitions.
+- **Server allocation (c)** — since ρ = λ / (c · μ), moving nodes toward Standard raises its effective capacity. The DOE quantifies how much reallocation is needed to bring Standard's W_q under the 30-min bound.
 
-![fig02](./assets/02-fig02.png)
-> (top) Standard W_q and Short W_q vs t_age; (bottom) total blocked jobs vs t_age.
-
-Three findings emerge from this sweep:
-
-**Finding 1 — The default threshold (6h) is effectively inert.** Only 2 promotions fired across 143,000 Standard arrivals. At ρ=0.998, Standard's queue drains so slowly that almost all jobs either complete service or are blocked before the 6h timer fires. The aging mechanism exists in the model but provides no practical benefit at this threshold.
-
-**Finding 2 — Promotion redistributes congestion rather than eliminating it.** Lowering t_age reduces Standard W_q significantly (3.97h → 0.29h at t_age=0.5h) but transfers load into Short, which was designed for fast interactive jobs. At t_age=0.5h, Short's W_q reaches 1.72h and P_b=2.7% — a partition that was idle is now moderately congested. The bottleneck shifts but does not disappear.
-
-**Finding 3 — t_age = 1.5h minimises total system blocking.** Total blocked jobs reach a minimum of 633 at t_age=1.5h, compared to 15,958 at the baseline. This represents a 96% reduction in blocking through scheduler configuration alone, with no hardware changes.
-
-### 3.3 Root Cause and Conclusion
-
-The simulation reveals that the true problem is not the aging threshold — it is the routing weight distribution. Assigning 80% of traffic to Standard regardless of actual runtime creates a structural overload that no scheduler policy can fully compensate for. Aging promotion is a palliative: it reduces the symptoms (blocking, extreme W_q) but does not address the cause (miscalibrated routing).
+### 3.3 Conclusion
 
 The actionable findings are:
 
-- **Short-term (zero cost):** Set Standard→Short t_age = 1.5h. This reduces Standard W_q from 3.97h to 1.22h and total blocking by 96%.
-- **Medium-term:** Rebalance routing weights to reflect actual walltime distributions — reducing the Standard weight from 0.80 toward 0.50–0.60.
+- **Short-term:** Rebalance routing weights to reflect actual walltime distributions — reducing the Standard weight from 0.80 toward 0.50–0.60 (quantified in Section 8).
+- **Medium-term:** Reallocate compute nodes toward the saturated Standard partition if rebalancing routing alone is insufficient.
 - **Long-term:** Instrument the cluster to collect actual vs declared walltime. Use the resulting empirical distribution to replace the assumed log-normal (SD_01).
+
+A complementary scheduler-side mitigation — **aging-based priority promotion** — was explored in a preliminary sweep and is documented as future work in [Section 11](#11-further-analysis--proposed-improvements).
 
 ---
 
@@ -121,15 +105,14 @@ The actionable findings are:
 | ID | Class | Statement |
 |----|-------|-----------|
 | SH_01 | Simplifying | Job inter-arrival times are exponentially distributed. Correlated submissions (e.g. workflow chains) are ignored. |
-| SH_02 | Simplifying | Priority promotion is instantaneous once T_age is crossed. Preemption of running jobs is not modelled. |
-| SH_03 | Simplifying | Each job occupies exactly one compute node regardless of core count. Multi-node parallelism is abstracted away. |
-| SH_04 | Simplifying | The user population is infinite (open network). Re-submission after blocking is not modelled. |
+| SH_02 | Simplifying | Each job occupies exactly one compute node regardless of core count. Multi-node parallelism is abstracted away. |
+| SH_03 | Simplifying | The user population is infinite (open network). Re-submission after blocking is not modelled. |
 | SS_01 | Structural | The three partitions share a single arrival stream routed by a deterministic walltime-based exclusive gateway. |
 | SS_02 | Structural | Each partition is an independent FIFO queue with finite capacity N and c parallel servers. |
-| SS_03 | Structural | Aging promotion bypasses the target partition's admission gateway — a promoted job always enters regardless of current queue length. |
 | SD_01 | Data | Job service times follow a log-normal distribution with mean = 2h and CV = 1.5, representative of typical HPC traces in absence of empirical data. |
 | SD_02 | Data | Arrival rate λ is a controllable DOE factor, ranging from low load (ρ = 0.3) to overload (ρ = 1.2) relative to total system capacity. |
-| SD_03 | Data | Aging thresholds are fixed at T_age = 6h for Standard→Short promotion and T_age = 24h for Long→Standard promotion (baseline). Optimised to T_age = 1.5h for Standard→Short based on Section 3.2 sweep. |
+
+*Scope note:* the baseline omits priority promotion (aging) and the assumptions it would introduce. The aging extension and its additional hypotheses are deferred to [Section 11](#11-further-analysis--proposed-improvements).
 
 ---
 
@@ -145,7 +128,7 @@ The internal mechanics of a single Kendall queue node are described by a three-l
 - **Queue lane** — holds waiting jobs in FIFO order. A server-release signal triggers a re-check of server availability and dispatches the head-of-queue job.
 - **Service lane** — models server acquisition, job execution (duration drawn from S), and server release. The release event feeds back into the queue lane as a signal.
 
-This diagram corresponds directly to the `QueueModel` class in `queue_model.py`. The `_handle_arrival`, `_handle_departure`, and `_handle_promotion` methods implement the Control, Service, and aging paths respectively.
+This diagram corresponds directly to the `QueueModel` class in `queue_model.py`. The `_handle_arrival` and `_handle_departure` methods implement the Control/admission and Service paths respectively.
 
 > 📊 **[Image — Generic queue node BPMN]**
 
@@ -155,12 +138,12 @@ The full HPC system is described by a five-lane BPMN diagram:
 
 - **Job source lane** — Poisson arrival process A=M(λ), Submit job task, and routing XOR gateway.
 - **Short partition lane** (t < 1h) — admission gateway N_short, FIFO queue (N=50), blocked end event.
-- **Standard partition lane** (t < 48h) — admission gateway N_standard, FIFO queue (N=200), aging promotion arrow to Short.
-- **Long partition lane** (t ≥ 48h) — admission gateway N_long, FIFO queue (N=100), aging promotion arrow to Standard.
+- **Standard partition lane** (t < 48h) — admission gateway N_standard, FIFO queue (N=200).
+- **Long partition lane** (t ≥ 48h) — admission gateway N_long, FIFO queue (N=100).
 - **Compute nodes lane** — three parallel execution tasks (c=16/64/32), XOR merge gateway, Job done end event.
 
 ![](./bpmn/hpc-bpmnio-v3.png)
-> 📊 **[Image — HPC system BPMN (hpc-bpmnio-v3.png)]**
+> The dashed promotion arrows shown between partitions denote the proposed aging extension (Section 11, future work); they are **not** part of the simulated baseline.
 
 
 ### 5.3 BPMN-to-Simulation Legend
@@ -172,13 +155,12 @@ The full HPC system is described by a five-lane BPMN diagram:
 | XOR gateway (admit) | ◇ | Capacity check N | `total_in_system >= self.capacity` | `TEST L (Q$+S$),N,BLOCKED` |
 | Task (queue) | □ | D = FIFO, N = {50, 200, 100} | `self.queue = deque()` | `QUEUE / DEPART` |
 | Task (execute) | □ | S = G(log-normal), c = {16, 64, 32} | `self.service_dist()` | `ENTER / ADVANCE / LEAVE` with `STORAGE` |
-| Dashed arrow (promotion) | ⇢ | t_age = {1.5h, 24h}, SS_03 | `_handle_promotion()` | Not implemented (see §6.3) |
 | End event (blocked) | ◉ | P_b = blocked/total | `entities_dropped` | `SAVEVALUE SBLK+,1` |
 | End event (done) | ◉ | Job exits system | entity removed | `TERMINATE` |
 
 ### 5.4 Modelling Decisions
 
-Two structural decisions are worth explicit justification. First, the XOR merge gateway at the bottom of the compute nodes lane is correct: each job completes in exactly one partition, so only one of the three incoming flows fires per token. Second, the aging promotion arrows connect directly into the queue task rather than through the admission gateway, encoding SS_03. This is a baseline simplification whose sensitivity is explored in the t_age sweep (Section 3.2).
+Two structural decisions are worth explicit justification. First, the XOR merge gateway at the bottom of the compute nodes lane is correct: each job completes in exactly one partition, so only one of the three incoming flows fires per token. Second, the three partitions are modelled as independent queues with no inter-partition flow (SS_01, SS_02); the only coupling is the shared arrival stream at the routing gateway. Relaxing this independence — via aging promotion between partitions — is the principal extension considered in Section 11.
 
 ---
 
@@ -196,17 +178,14 @@ The simulator is implemented in Python across five modules:
 | `util.py` | Distribution samplers: `exponential`, `deterministic`, `lognormal` |
 | `main.py` | Entry point: M/M/1 validation and HPC cluster runs |
 
-**Event-driven architecture.** The simulation clock never ticks — it jumps directly from event to event. The event calendar is a min-heap ordered by `(time, priority)`. Three event types are defined with explicit tie-breaking priority:
+**Event-driven architecture.** The simulation clock never ticks — it jumps directly from event to event. The event calendar is a min-heap ordered by `(time, priority)`. Event types are defined with explicit tie-breaking priority:
 
 - Departure → priority 0 (frees server before new arrivals compete)
 - Arrival / Transfer → priority 1
-- Promotion → priority 2 (rescheduling event, yields to both)
 
 This ordering ensures that a departure and an arrival at identical timestamps always resolve in the physically correct order, preventing artificial inflation of queue lengths and waiting times.
 
-**Modularity.** Each `QueueModel` instance is self-contained with its own event handlers. Queues are connected via the `next_queue` parameter for multi-stage pipelines, and via `promote_to` for aging promotion. The `Router` class implements the BPMN routing gateway, distributing a single Poisson stream across partitions by categorical weights.
-
-**Aging promotion.** When a job joins the queue and `t_age` is set, a `Promotion` event is scheduled at `clock + t_age`. When it fires, `_handle_promotion` locates the job in the deque by object identity. If found, the job is removed and injected into the target partition with `bypass_capacity=True`, skipping the admission gateway (SS_03). If the job has already entered service, the timer is a no-op.
+**Modularity.** Each `QueueModel` instance is self-contained with its own event handlers. Queues are connected via the `next_queue` parameter for multi-stage pipelines. The `Router` class implements the BPMN routing gateway, distributing a single Poisson stream across partitions by categorical weights.
 
 **Warm-up deletion.** The `reset_statistics()` method on `QueueModel` zeros all statistical counters without disturbing the model state (queue contents and busy servers are preserved). This mirrors GPSS World's `RESET` command, enabling clean separation of transient and steady-state data collection.
 
@@ -226,16 +205,13 @@ Residual error is attributable to warm-up bias — the initial empty-system tran
 
 ### 6.3 GPSS World Validation Model
 
-A parallel model was implemented in GPSS World (`hpc_model.gps`) to provide independent cross-validation of the Python DES results.
+A parallel model was implemented in GPSS World (`gpss/hpc_validation_v2_noaging.gps`) to provide independent cross-validation of the Python DES results.
 
 **Service distribution compromise.** GPSS World has no native log-normal sampler. The model uses Erlang-2 (two exponential stages of mean 1h each, total mean=2h, CV=0.707) as an approximation of the Python log-normal (CV=1.5). This preserves the mean but reduces variability. At ρ ≈ 1.0 the Pollaczek-Khinchine formula shows that W_q is dominated by the `1/(1-ρ)` congestion term rather than the `(1+C_s²)` variability term, so both models converge to near-identical results at saturation.
 
-**Aging promotion limitation.** GPSS World's `SPLIT` block creates independent companion entities rather than conditionally relocating existing ones. Per-job promotion timers created phantom load in the Short partition (96,000 stuck entities in initial testing). The GPSS model therefore validates the no-aging baseline only:
+The GPSS model validates the same core queueing mechanics as the Python DES — arrivals, walltime-based routing, multi-server service, and finite-capacity blocking. (A GPSS limitation relevant only to the future aging extension is noted in [Section 11](#11-further-analysis--proposed-improvements).)
 
-- **Layer 1** — core queueing mechanics (arrivals, routing, service, blocking): validated in both Python and GPSS. Results agree within 3%.
-- **Layer 2** — aging promotion: validated in Python only, against Little's Law checks and sensitivity sweep. GPSS limitation documented as a known constraint.
-
-**Three-way validation results (no-aging baseline, T=4000h):**
+**Cross-validation results (T=4000h):**
 
 | Metric | Python | GPSS | Difference |
 |--------|--------|------|------------|
@@ -306,7 +282,6 @@ Input data for the simulation consists of four parameter groups:
 | Arrival rate λ | Controllable factor (DOE) | 45 jobs/h baseline | SD_02 |
 | Service mean, CV | Literature / representative | mean=2h, CV=1.5 (log-normal) | SD_01 |
 | Routing weights | Assumed from over-declaration bias | [0.05, 0.80, 0.15] | SS_01 |
-| Aging thresholds | Optimised via sweep (§3.2) | T_age=1.5h (Std→Short) | SD_03 |
 | Partition config (c, N) | System specification | c={16,64,32}, N={50,200,100} | SS_01, SS_02 |
 
 In absence of empirical HPC trace data, service time parameters are set to representative values. The log-normal distribution with mean=2h and CV=1.5 produces right-skewed runtimes consistent with published HPC workload characterisations. Routing weights encode the over-declaration bias described in Section 3: 80% of jobs are routed to Standard regardless of true runtime, reflecting the observed user behaviour of padding walltime estimates.
@@ -317,7 +292,23 @@ The data connection mechanism is direct parametrisation — all values are passe
 
 ## 8. Design of Experiments (DOE)
 
-> 🔲 *Placeholder — factorial design exploring λ × t_age interaction. Reference t_age sweep results from Section 3.2. Define response variables (W_q Standard, P_b Standard, W_q Short), factor levels, replication plan. Detect and analyse interactions.*
+A factorial design quantifies how the two controllable levers identified in Section 3.2 act on the Standard-partition bottleneck.
+
+**Factors**
+
+| Factor | Levels | Rationale |
+|--------|--------|-----------|
+| Arrival rate λ | 30 / 45 / 60 jobs/h | Spans moderate load to overload (SD_02) |
+| Standard routing weight | 0.80 (baseline) / 0.65 / 0.50 | Tests rebalancing load off the saturated partition (SS_01) |
+| Standard servers c | 64 (baseline) / 80 | Tests reallocating nodes toward Standard |
+
+The Short/Long routing weights absorb the difference proportionally; total node count is held fixed when c_Standard is raised (the extra nodes are drawn from the under-utilised Long partition).
+
+**Response variables:** W_q Standard, P_b Standard, and W_q Short (to detect load pushed onto the fast partition).
+
+**Plan:** full factorial (3 × 3 × 2 = 18 cells) with replication via independent RNG seeds (≥5 per cell), 500h warm-up + 4000h collection per run. Fit a linear model with main effects and two-way interactions; the λ × routing-weight interaction is expected to dominate, since rebalancing matters most under high load.
+
+> 🔲 *To complete: run the factorial, populate the response table, and report the ANOVA / interaction plots.*
 
 ---
 
@@ -331,11 +322,11 @@ The event-driven engine is verified through M/M/1 theoretical comparison (Sectio
 
 ### 9.2 Trace Verification
 
-The trace log (Section 6.4) confirms monotonic clock advancement, correct tie-breaking priority (Departure < Arrival < Promotion), and expected queue dynamics at ρ=0.75.
+The trace log (Section 6.4) confirms monotonic clock advancement, correct tie-breaking priority (Departure < Arrival), and expected queue dynamics at ρ=0.75.
 
 ### 9.3 Cross-Validation (GPSS)
 
-The Python DES is cross-validated against an independent GPSS World implementation (Section 6.3). All seven metrics agree within 3% on the no-aging baseline. The GPSS limitation on aging promotion is documented; Layer 2 validation is Python-only.
+The Python DES is cross-validated against an independent GPSS World implementation (Section 6.3). All seven metrics agree within 3%.
 
 ### 9.4 RNG Validation
 
@@ -347,13 +338,59 @@ The transient bias is quantified by running the M/M/1 model at two durations: T=
 
 ### 9.6 Model Assumptions Validation
 
-Hypothesis SS_03 (promotion bypasses admission) is the strongest structural assumption. Section 3.2 shows that at t_age=1.5h, Short receives ~15,000 promoted jobs and begins blocking (P_b=2.6%). Under an alternative topology where promotion goes through the admission gateway, promoted jobs could also be blocked at Short, producing different W_q values. This alternative is noted as a sensitivity test candidate for the DOE.
+Hypothesis SS_01 (a fixed, deterministic walltime-based routing split) is the strongest structural assumption: it drives the entire load imbalance. The baseline encodes the over-declaration bias as static weights [0.05, 0.80, 0.15]; the DOE (Section 8) treats these weights as a controllable factor precisely to test how sensitive system performance is to this assumption. SD_01 (log-normal service with CV=1.5) is the strongest data assumption; at saturation, W_q is dominated by the congestion term rather than service variability (Section 6.3), which bounds its impact on the baseline conclusions.
 
 ---
 
 ## 10. Results / Conclusions
 
-> 🔲 *Placeholder — synthesise from Section 3.3 findings: t_age=1.5h reduces blocking 96%, Standard saturation is structural not operational, recommendations for short/medium/long-term actions.*
+> 🔲 *Placeholder — synthesise from the baseline (§3.1) and the DOE (§8): Standard saturation is structural (driven by routing weights, not a hardware shortage), routing rebalancing and/or server reallocation as the primary levers, and the short/medium/long-term recommendations from §3.3. Note aging promotion (§11) as a complementary scheduler-side option for future work.*
+
+---
+
+## 11. Further Analysis / Proposed Improvements
+
+The baseline model deliberately keeps the three partitions independent (SS_01, SS_02). The most promising extension is a **scheduler-side mitigation** that couples them: aging-based priority promotion. It is fully specified here and supported by a preliminary sweep, but is left out of the validated baseline scope to keep the core model and its hypotheses tight.
+
+### 11.1 Aging-Based Priority Promotion (design)
+
+A job that has waited longer than a threshold `t_age` in its partition is *promoted* into a less-loaded partition, draining the saturated Standard queue without adding hardware. Specifying this extension would re-introduce three hypotheses retired from the baseline:
+
+| ID | Class | Statement |
+|----|-------|-----------|
+| (A1) | Simplifying | Priority promotion is instantaneous once `t_age` is crossed; running jobs are not preempted. |
+| (A2) | Structural | Promotion bypasses the target partition's admission gateway — a promoted job always enters regardless of current queue length. |
+| (A3) | Data | Aging thresholds (e.g. `t_age` = 1.5h Standard→Short, 24h Long→Standard) are tunable control parameters. |
+
+In the DES this is a localised change: arm a `Promotion` event at `clock + t_age` when a job joins the queue, and on firing relocate the job (if still waiting) into the target partition. The implementation already exists in `queue_model.py` (`_handle_promotion`, `promote_to`, `t_age`) and is exercised by the preliminary sweep below, so the idea is "ready" to fold back into scope.
+
+### 11.2 Preliminary Sweep (exploratory, not part of the validated baseline)
+
+A preliminary run with promotion enabled swept the Standard→Short threshold `t_age` over six values (all other parameters at baseline):
+
+| t_age (h) | Standard W_q (h) | Short W_q (h) | Promotions | Total blocked |
+|-----------|-----------------|---------------|------------|---------------|
+| 6.0 | 3.967 | 0.001 | 2 | 15,958 |
+| 3.0 | 2.708 | 3.212 | 14,950 | 676 |
+| 2.0 | 1.700 | 2.891 | 16,045 | 775 |
+| **1.5** | **1.222** | **2.382** | **15,295** | **633** |
+| 1.0 | 0.719 | 2.185 | 15,271 | 813 |
+| 0.5 | 0.288 | 1.718 | 16,663 | 704 |
+
+![fig02](./assets/02-fig02.png)
+> (top) Standard W_q and Short W_q vs t_age; (bottom) total blocked jobs vs t_age.
+
+Three observations motivate this as future work:
+
+1. **A high threshold is inert** — at `t_age`=6h only 2 promotions fire; at ρ=0.998 jobs complete or are blocked before the timer elapses.
+2. **Promotion redistributes congestion** — lowering `t_age` cuts Standard W_q but loads Short (its W_q reaches 1.72h at `t_age`=0.5h). The bottleneck shifts rather than disappearing, which is why routing rebalancing (Section 8) is the primary lever and aging a complement.
+3. **`t_age`=1.5h minimises total blocking** — blocking falls from 15,958 to 633 (~96%) through scheduler configuration alone.
+
+### 11.3 Open Items for the Aging Extension
+
+- **GPSS validation gap.** GPSS World's `SPLIT` creates independent companion entities rather than relocating existing ones; per-job timers produced phantom load (~96,000 stuck entities in initial testing). Validating aging in GPSS needs a different construct; the current Python results rely on Little's Law checks and the sweep above.
+- **Bounded promotion (relaxing A2).** Promoting into a full queue unconditionally is a strong assumption. A bounded variant — where promoted jobs are still subject to the target's admission gateway — should be modelled and compared.
+- **Joint tuning.** Fold `t_age` into the DOE alongside routing weights to study whether aging adds value once routing is already rebalanced.
 
 ---
 
@@ -365,7 +402,7 @@ Hypothesis SS_03 (promotion bypasses admission) is the strongest structural assu
 
 ### Annex B — GPSS Model Source
 
-The complete GPSS World model is in `hpc_model.gps`. Key GPSS blocks and their mapping to the BPMN:
+The complete GPSS World model is in `gpss/hpc_validation_v2_noaging.gps`. Key GPSS blocks and their mapping to the BPMN:
 
 ```
 GENERATE  (Exponential(1,0,0.02222))   → Start event (Poisson λ=45)
@@ -390,6 +427,6 @@ TERMINATE                             → End event
 
 ## Notes / TODO
 
-- A few things worth flagging as you move forward. SS_03 is the hypothesis that will likely draw the most scrutiny — promoting into a full queue unconditionally is a strong assumption, and your professor may ask you to defend it or model a bounded version. Also note that SD_01's CV = 1.5 is a reasonable default but you should cite a source or justify it if you have access to any real HPC trace datasets (there are public ones from LLNL and ANL).
+- A few things worth flagging as you move forward. With aging moved to future work (§11), the baseline's strongest assumption is now SS_01 (the fixed routing split) — the DOE is built around stressing exactly that. The aging assumption that drew the most scrutiny (promoting into a full queue unconditionally) is captured as (A2) in §11 with a bounded variant noted. Also note that SD_01's CV = 1.5 is a reasonable default but you should cite a source or justify it if you have access to any real HPC trace datasets (there are public ones from LLNL and ANL).
 
 - The interesting thing to notice here is the relationship between c and traffic intensity ρ. Recall that ρ = λ / (c · μ), where μ is the service rate (1/mean service time). A partition with a high c can absorb a much higher arrival rate before becoming saturated. So giving Standard c=64 is essentially your model's way of saying "we know this partition will be hammered, so we provision it with the most resources." Whether that's enough resources is precisely what your simulation will answer.
