@@ -282,23 +282,69 @@ The data connection mechanism is direct parametrisation — all values are passe
 
 ## 8. Design of Experiments (DOE)
 
-A factorial design quantifies how the two controllable levers identified in Section 3.2 act on the Standard-partition bottleneck.
+### 8.1 Design Rationale
 
-**Factors**
+Section 3.3 identified two structural levers acting on the Standard-partition bottleneck: the **routing weight** assigned to Standard (SS_01) and the **server allocation** c_Standard (SS_02), both of which interact with the overall **arrival rate** λ (SD_02). Because all three quantities feed `ρ_Standard = (λ·w_Standard)/(c_Standard·μ)` multiplicatively, their effects cannot be assumed additive — the effect of increasing c_Standard depends on how much traffic is routed there in the first place, and that in turn depends on λ.
 
-| Factor | Levels | Rationale |
-|--------|--------|-----------|
-| Arrival rate λ | 30 / 45 / 60 jobs/h | Spans moderate load to overload (SD_02) |
-| Standard routing weight | 0.80 (baseline) / 0.65 / 0.50 | Tests rebalancing load off the saturated partition (SS_01) |
-| Standard servers c | 64 (baseline) / 80 | Tests reallocating nodes toward Standard |
+A **2³ full factorial screening design** (2 levels × 3 factors = 8 runs) is used to detect *which* factors interact and how strongly, before committing to a finer sweep on the winning factor — the same two-stage logic (screen, then sweep) used for t_age in the earlier exploratory analysis (Section 11).
 
-The Short/Long routing weights absorb the difference proportionally; total node count is held fixed when c_Standard is raised (the extra nodes are drawn from the under-utilised Long partition).
+**Factors and levels:**
 
-**Response variables:** W_q Standard, P_b Standard, and W_q Short (to detect load pushed onto the fast partition).
+| Factor | Label | Low (−) | High (+) | Rationale |
+|--------|-------|---------|----------|-----------|
+| Arrival rate λ | A | 30 jobs/h | 60 jobs/h | Spans moderate load (offered ρ≈0.49–0.75) to overload (ρ≈0.97–1.50) |
+| Standard routing weight | B | 0.65 | 0.80 (baseline) | Tests rebalancing load off the saturated partition (SS_01) |
+| Standard servers c | C | 64 (baseline) | 80 | Tests reallocating nodes toward Standard (SS_02) |
 
-**Plan:** full factorial (3 × 3 × 2 = 18 cells) with replication via independent RNG seeds (≥5 per cell), 500h warm-up + 4000h collection per run. Fit a linear model with main effects and two-way interactions; the λ × routing-weight interaction is expected to dominate, since rebalancing matters most under high load.
+The remaining routing weight (1 − w_Standard) is split between Short and Long in a fixed 1:3 ratio, matching the baseline proportions (0.05 : 0.15) when w_Standard=0.80. Short (c=16, N=50) and Long (c=32, N=100) are held fixed across all runs — only Standard's allocation varies — so any change observed in Short or Long is a *consequence* of redistribution, not a direct factor.
 
-> 🔲 *To complete: run the factorial, populate the response table, and report the ANOVA / interaction plots.*
+**Response variables:** W_q and P_b for all three partitions (Standard is primary; Short and Long are tracked to detect a shifted bottleneck, as seen with aging in Section 11).
+
+**Replication:** single run per cell (seed=42, T=4000h), consistent with the baseline methodology in Section 3. Section 9.4/Annex A's RNG validation establishes that this seed produces a statistically well-behaved stream; multi-seed replication is noted as future work in Section 11.
+
+### 8.2 Results
+
+| Run | λ (A) | w_Std (B) | c_Std (C) | offered ρ_Std | W_q Std | ρ Std | P_b Std | W_q Short | P_b Short | W_q Long | P_b Long |
+|-----|------|------|------|---------|--------|--------|--------|----------|----------|---------|---------|
+| 1 | 30 | 0.65 | 64 | 0.609 | 0.0001 | 0.605 | 0.000 | 0.0000 | 0.000 | 0.0000 | 0.000 |
+| 2 | 60 | 0.65 | 64 | 1.219 | 4.0903 | 0.999 | 0.180 | 0.0493 | 0.000 | 1.5325 | 0.0101 |
+| 3 | 30 | 0.80 | 64 | 0.750 | 0.0026 | 0.746 | 0.000 | 0.0000 | 0.000 | 0.0000 | 0.000 |
+| 4 | 60 | 0.80 | 64 | 1.500 | 4.1713 | 0.999 | 0.331 | 0.0000 | 0.000 | 0.0004 | 0.000 |
+| 5 | 30 | 0.65 | 80 | 0.487 | 0.0000 | 0.484 | 0.000 | 0.0000 | 0.000 | 0.0000 | 0.000 |
+| 6 | 60 | 0.65 | 80 | 0.975 | 0.9025 | 0.974 | 0.003 | 0.0279 | 0.000 | 1.3574 | 0.0098 |
+| 7 | 30 | 0.80 | 80 | 0.600 | 0.0000 | 0.597 | 0.000 | 0.0000 | 0.000 | 0.0000 | 0.000 |
+| 8 | 60 | 0.80 | 80 | 1.200 | 2.8607 | 0.999 | 0.167 | 0.0000 | 0.000 | 0.0006 | 0.000 |
+
+![](./assets/03-fig03.png)
+> P_b Standard and P_b Long across the 8 runs, coloured by λ level.
+
+### 8.3 Effects Analysis
+
+Main and interaction effects were computed using the sign-table method (average response at high level minus average at low level for main effects; signed cross-products for interactions):
+
+| Effect | P_b Standard | W_q Standard (h) |
+|--------|-------------|-------------------|
+| A — λ | **+0.1702** | **+3.0055** |
+| B — w_Standard | +0.0787 | +0.5105 |
+| C — c_Standard | −0.0855 | −1.1253 |
+| A×B | +0.0787 | +0.5092 |
+| A×C | −0.0855 | −1.1239 |
+| B×C | +0.0030 | +0.4687 |
+| A×B×C | +0.0030 | +0.4700 |
+
+Three findings emerge:
+
+**Finding 1 — λ dominates, and at low λ nothing else matters.** At λ=30 (runs 1, 3, 5, 7), P_b_Standard = 0.000 in *every* cell regardless of w_Standard or c_Standard — the system has enough slack that the other two factors are invisible. This is why the A×B and A×C interaction magnitudes are nearly identical to B and C's main effects (0.0787 ≈ 0.0787, −0.0855 ≈ −0.0855): the entire effect of B and C is concentrated in the λ=60 condition. **The practical implication is that routing-weight and server-allocation tuning only matters under high load — at moderate load the system is robust to misconfiguration of either lever.**
+
+**Finding 2 — c_Standard has a larger effect than w_Standard, but they point the same direction.** Both B and C have similar-magnitude main effects on P_b_Standard (+0.079 vs −0.086), but C is achieved by adding hardware while B is a zero-cost configuration change. Comparing run 4 (λ=60, w=0.80, c=64 → P_b=0.331, the worst cell) against run 6 (λ=60, w=0.65, c=80 → P_b=0.003, the best cell under high load) shows the *combined* effect (0.331 → 0.003, a 99% reduction) is far larger than either factor's main effect alone — confirming the multiplicative relationship motivating this design.
+
+**Finding 3 — the bottleneck shifts to Long under redistribution at high λ.** Runs 2 and 6 (w_Standard=0.65 at λ=60) both show Long developing non-trivial blocking (P_b_Long ≈ 0.0098–0.0101) that is absent in every w_Standard=0.80 run. This mirrors the aging-promotion finding from Section 11: relieving Standard by redistributing traffic does not eliminate congestion, it relocates it — here to Long, which receives 3× the redistributed weight under the 1:3 split. Even so, the *total* blocking across all partitions in run 6 (0.003 + 0.0098 ≈ 0.013) is dramatically lower than in run 4 (0.331), so the redistribution is still a net improvement — but it is not a free lunch.
+
+### 8.4 Recommended Configuration and Follow-up
+
+Under high load (λ≈60), the (B−, C+) cell — w_Standard=0.65, c_Standard=80 — minimises total system blocking. Both changes point the same direction (lower w_Standard, higher c_Standard both reduce ρ_Standard), and since B×C is small (+0.003 for P_b_Standard), their effects are close to additive: the screening design did **not** find a strong antagonistic interaction between routing and server allocation, unlike the strong λ-dependence found in Finding 1.
+
+Given the asymmetric cost (B is free, C requires hardware), the recommended next step is a **one-dimensional sweep of w_Standard** at the high-c configuration (c_Standard=80) across λ∈{45, 60}, in the style of the t_age sweep (Section 11.1), to locate the w_Standard value that balances P_b_Standard against the emerging P_b_Long — i.e., to find the redistribution ratio that does not merely relocate the bottleneck to Long.
 
 ---
 
