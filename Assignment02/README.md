@@ -8,7 +8,7 @@
 
 This report presents the discrete-event simulation (DES) of an HPC (High-Performance Computing) batch queueing system modelled using Kendall's notation. The system of interest is a multi-partition cluster scheduler — analogous to SLURM — in which jobs arrive following a Poisson process and are routed to one of three partitions (Short, Standard, Long) based on their declared walltime. Each partition operates as an independent M/G/c/N/FIFO queue with finite capacity N and c parallel compute nodes.
 
-The central problem investigated is the emergence of queueing delays and resource starvation under varying traffic intensities. The simulation is implemented in Python using an event-driven architecture, validated against theoretical M/M/c Erlang-C predictions and an independent GPSS World model. A factorial design of experiments (DOE) explores the interaction between arrival rate, routing weights, and per-partition server allocation. Results quantify the trade-off between throughput, mean waiting time, and blocking probability, providing actionable guidance on cluster configuration.
+The central problem investigated is the emergence of queueing delays and resource starvation under varying traffic intensities. The simulation is implemented in Python using an event-driven architecture, validated against closed-form M/M/1 and M/M/c (Erlang-C) predictions and an independent GPSS World model. A factorial design of experiments (DOE) explores the interaction between arrival rate, routing weights, and per-partition server allocation. Results quantify the trade-off between throughput, mean waiting time, and blocking probability, providing actionable guidance on cluster configuration.
 
 ---
 
@@ -102,15 +102,15 @@ A complementary scheduler-side mitigation — **aging-based priority promotion**
 
 ## 4. Systemic Hypotheses
 
-| ID | Class | Statement                                                                                                                                          |
-|----|-------|----------------------------------------------------------------------------------------------------------------------------------------------------|
-| SH_01 | Simplifying | Job inter-arrival times are exponentially distributed. Correlated submissions (e.g. workflow chains) are ignored.                                  |
-| SH_02 | Simplifying | Each job occupies exactly one compute node regardless of core count. Multi-node parallelism is abstracted away.                                    |
-| SH_03 | Simplifying | The user population is infinite (open network). Re-submission after blocking is not modelled.                                                      |
-| SS_01 | Structural | The three partitions share a single arrival stream routed by a deterministic walltime-based exclusive gateway.                                     |
-| SS_02 | Structural | Each partition is an independent FIFO queue with finite capacity N and c parallel servers.                                                         |
+| ID | Class | Statement |
+|----|-------|-----------|
+| SH_01 | Simplifying | Job inter-arrival times are exponentially distributed. Correlated submissions (e.g. workflow chains) are ignored. |
+| SH_02 | Simplifying | Each job occupies exactly one compute node regardless of core count. Multi-node parallelism is abstracted away. |
+| SH_03 | Simplifying | The user population is infinite (open network). Re-submission after blocking is not modelled. |
+| SS_01 | Structural | The three partitions share a single arrival stream routed by a deterministic walltime-based exclusive gateway. |
+| SS_02 | Structural | Each partition is an independent FIFO queue with finite capacity N and c parallel servers. |
 | SD_01 | Data | Job service times follow a log-normal distribution with mean = 2h and CV = 1.5, representative of typical HPC traces in absence of empirical data. |
-| SD_02 | Data | Arrival rate λ is a controllable DOE factor, ranging from low load (ρ = 0.5) to overload (ρ = 1.1) relative to total system capacity.              |
+| SD_02 | Data | Arrival rate λ is a controllable DOE factor, ranging from moderate load (ρ_total ≈ 0.54 at λ=30) to overload (ρ_total ≈ 1.07 at λ=60) relative to total system capacity. |
 
 *Scope note:* the baseline omits priority promotion (aging) and the assumptions it would introduce. The aging extension and its additional hypotheses are deferred to [Section 11](#11-further-analysis--proposed-improvements).
 
@@ -173,7 +173,7 @@ This ordering ensures that a departure and an arrival at identical timestamps al
 
 **Warm-up deletion.** The `reset_statistics()` method on `QueueModel` zeros all statistical counters without disturbing the model state (queue contents and busy servers are preserved). This mirrors GPSS World's `RESET` command, enabling clean separation of transient and steady-state data collection.
 
-### 6.2 M/M/1 Validation
+### 6.2 M/M/1 and M/M/c Validation
 
 Before running the full HPC model, the engine was validated against closed-form M/M/1 theory (λ=1.5, μ=2.0, ρ=0.75, T=50,000h):
 
@@ -184,6 +184,16 @@ Before running the full HPC model, the engine was validated against closed-form 
 | ρ | 0.750 | 0.748 | 0.27% |
 
 Little's Law check: L_q = λ · W_q → 2.222 ≈ 1.500 × 1.479 = 2.219 ✓ (0.1% discrepancy).
+
+The M/M/1 case validates the single-server path but does not exercise multi-server dispatch. Since all three partitions are multi-server (c = 16/64/32), the engine was additionally validated against the **Erlang-C** formula for an M/M/4 queue (λ=3.0, μ=1.0/server, ρ=0.75, T=80,000h):
+
+| Metric | Theory | Simulated | Error |
+|--------|--------|-----------|-------|
+| W_q | 0.5094 | 0.5079 | 0.30% |
+| ρ | 0.7500 | 0.7499 | 0.02% |
+| L_q | 1.5283 | 1.5247 | 0.23% |
+
+The multi-server logic agrees with Erlang-C to within 0.3%, confirming that server acquisition, queueing, and dispatch behave correctly for c > 1. Little's Law again holds (1.5247 ≈ 3.0 × 0.5079 = 1.5236).
 
 ### 6.3 GPSS World Validation Model
 
@@ -247,7 +257,7 @@ The simulator supports a trace mode (`trace_limit=N`) that logs the first N even
 Verification points from the trace:
 
 - **Clock advances monotonically** — no time reversals, confirming the heap ordering is correct.
-- **Tie-breaking is respected** — at t≈3.700 (steps 14–16), two arrivals at t=3.699 and t=3.700 are followed by a departure at t=3.701. When events share identical timestamps, departures would fire first (priority 0 < 1), consistent with the `event.py` ordering.
+- **Tie-breaking is respected** — at steps 14–15 an arrival at t=3.699069 is immediately followed by a departure at t=3.700978; the `(time, priority)` ordering guarantees that whenever an arrival and a departure share an identical timestamp, the departure fires first (priority 0 < 1), freeing a server before the new arrival competes for it.
 - **Calendar size oscillates between 0 and 1** — at step 0 and step 6 the calendar is empty (size 0), meaning the system drained all pending events before the next arrival. This is expected at ρ=0.75: the server is fast enough to occasionally clear the backlog completely.
 - **Arrival–departure alternation** — the pattern of arrivals and departures is consistent with ρ=0.75: arrivals slightly outnumber departures in bursts, then departures catch up, which is the characteristic steady-state oscillation of a subcritical queue.
 
@@ -294,11 +304,11 @@ The Short/Long routing weights absorb the difference proportionally; total node 
 
 ## 9. Model Validation
 
-Validation is performed across five dimensions as specified in the assignment:
+Validation is performed across six dimensions as specified in the assignment:
 
 ### 9.1 Simulation Algorithm Verification
 
-The event-driven engine is verified through M/M/1 theoretical comparison (Section 6.2). All metrics agree within 1.4% of closed-form predictions at T=50,000h. Little's Law holds to within 0.1%, confirming internal consistency.
+The event-driven engine is verified through closed-form comparison against both M/M/1 (single-server) and M/M/c (Erlang-C, multi-server) theory (Section 6.2). All metrics agree within 1.4% (M/M/1) and 0.3% (M/M/4) of theoretical predictions. Little's Law holds to within 0.1% in both cases, confirming internal consistency across single- and multi-server configurations.
 
 ### 9.2 Trace Verification
 
