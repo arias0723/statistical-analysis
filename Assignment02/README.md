@@ -102,15 +102,15 @@ A complementary scheduler-side mitigation — **aging-based priority promotion**
 
 ## 4. Systemic Hypotheses
 
-| ID | Class | Statement |
-|----|-------|-----------|
-| SH_01 | Simplifying | Job inter-arrival times are exponentially distributed. Correlated submissions (e.g. workflow chains) are ignored. |
-| SH_02 | Simplifying | Each job occupies exactly one compute node regardless of core count. Multi-node parallelism is abstracted away. |
-| SH_03 | Simplifying | The user population is infinite (open network). Re-submission after blocking is not modelled. |
-| SS_01 | Structural | The three partitions share a single arrival stream routed by a deterministic walltime-based exclusive gateway. |
-| SS_02 | Structural | Each partition is an independent FIFO queue with finite capacity N and c parallel servers. |
+| ID | Class | Statement                                                                                                                                          |
+|----|-------|----------------------------------------------------------------------------------------------------------------------------------------------------|
+| SH_01 | Simplifying | Job inter-arrival times are exponentially distributed. Correlated submissions (e.g. workflow chains) are ignored.                                  |
+| SH_02 | Simplifying | Each job occupies exactly one compute node regardless of core count. Multi-node parallelism is abstracted away.                                    |
+| SH_03 | Simplifying | The user population is infinite (open network). Re-submission after blocking is not modelled.                                                      |
+| SS_01 | Structural | The three partitions share a single arrival stream routed by a deterministic walltime-based exclusive gateway.                                     |
+| SS_02 | Structural | Each partition is an independent FIFO queue with finite capacity N and c parallel servers.                                                         |
 | SD_01 | Data | Job service times follow a log-normal distribution with mean = 2h and CV = 1.5, representative of typical HPC traces in absence of empirical data. |
-| SD_02 | Data | Arrival rate λ is a controllable DOE factor, ranging from low load (ρ = 0.3) to overload (ρ = 1.2) relative to total system capacity. |
+| SD_02 | Data | Arrival rate λ is a controllable DOE factor, ranging from low load (ρ = 0.5) to overload (ρ = 1.1) relative to total system capacity.              |
 
 *Scope note:* the baseline omits priority promotion (aging) and the assumptions it would introduce. The aging extension and its additional hypotheses are deferred to [Section 11](#11-further-analysis--proposed-improvements).
 
@@ -130,7 +130,7 @@ The full HPC system is described by a five-lane BPMN diagram:
 
 ![](./bpmn/hpc-bpmnio-v3-noaging.png)
 
-### 5.1 BPMN-to-Simulation Legend
+### 5.2 BPMN-to-Simulation Legend
 
 | BPMN element | Symbol | Simulation parameter | Python construct | GPSS construct |
 |---|---|---|---|---|
