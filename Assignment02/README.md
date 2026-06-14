@@ -118,21 +118,7 @@ A complementary scheduler-side mitigation — **aging-based priority promotion**
 
 ## 5. Model Specification
 
-The system is specified at two levels of abstraction, both represented as BPMN diagrams.
-
-### 5.1 Generic Queue Node
-
-The internal mechanics of a single Kendall queue node are described by a three-lane BPMN diagram covering Control, Queue, and Service layers:
-
-- **Control lane** — implements the admission gateway (capacity check N) and the secondary server-availability check (c). A job failing the capacity check is dropped immediately. A job finding a free server bypasses the queue and enters service directly.
-- **Queue lane** — holds waiting jobs in FIFO order. A server-release signal triggers a re-check of server availability and dispatches the head-of-queue job.
-- **Service lane** — models server acquisition, job execution (duration drawn from S), and server release. The release event feeds back into the queue lane as a signal.
-
-This diagram corresponds directly to the `QueueModel` class in `queue_model.py`. The `_handle_arrival` and `_handle_departure` methods implement the Control/admission and Service paths respectively.
-
-> 📊 **[Image — Generic queue node BPMN]**
-
-### 5.2 System Architecture
+### 5.1 System Architecture
 
 The full HPC system is described by a five-lane BPMN diagram:
 
@@ -142,11 +128,9 @@ The full HPC system is described by a five-lane BPMN diagram:
 - **Long partition lane** (t ≥ 48h) — admission gateway N_long, FIFO queue (N=100).
 - **Compute nodes lane** — three parallel execution tasks (c=16/64/32), XOR merge gateway, Job done end event.
 
-![](./bpmn/hpc-bpmnio-v3.png)
-> The dashed promotion arrows shown between partitions denote the proposed aging extension (Section 11, future work); they are **not** part of the simulated baseline.
+![](./bpmn/hpc-bpmnio-v3-noaging.png)
 
-
-### 5.3 BPMN-to-Simulation Legend
+### 5.1 BPMN-to-Simulation Legend
 
 | BPMN element | Symbol | Simulation parameter | Python construct | GPSS construct |
 |---|---|---|---|---|
@@ -158,7 +142,7 @@ The full HPC system is described by a five-lane BPMN diagram:
 | End event (blocked) | ◉ | P_b = blocked/total | `entities_dropped` | `SAVEVALUE SBLK+,1` |
 | End event (done) | ◉ | Job exits system | entity removed | `TERMINATE` |
 
-### 5.4 Modelling Decisions
+### 5.3 Modelling Decisions
 
 Two structural decisions are worth explicit justification. First, the XOR merge gateway at the bottom of the compute nodes lane is correct: each job completes in exactly one partition, so only one of the three incoming flows fires per token. Second, the three partitions are modelled as independent queues with no inter-partition flow (SS_01, SS_02); the only coupling is the shared arrival stream at the routing gateway. Relaxing this independence — via aging promotion between partitions — is the principal extension considered in Section 11.
 
@@ -201,13 +185,9 @@ Before running the full HPC model, the engine was validated against closed-form 
 
 Little's Law check: L_q = λ · W_q → 2.222 ≈ 1.500 × 1.479 = 2.219 ✓ (0.1% discrepancy).
 
-Residual error is attributable to warm-up bias — the initial empty-system transient pulls averages slightly below steady-state values. At T=5,000h the error was 8.9%; at T=50,000h it fell to 1.37%, confirming the engine is correct and the bias is purely transient.
-
 ### 6.3 GPSS World Validation Model
 
 A parallel model was implemented in GPSS World (`gpss/hpc_validation_v2_noaging.gps`) to provide independent cross-validation of the Python DES results.
-
-**Service distribution compromise.** GPSS World has no native log-normal sampler. The model uses Erlang-2 (two exponential stages of mean 1h each, total mean=2h, CV=0.707) as an approximation of the Python log-normal (CV=1.5). This preserves the mean but reduces variability. At ρ ≈ 1.0 the Pollaczek-Khinchine formula shows that W_q is dominated by the `1/(1-ρ)` congestion term rather than the `(1+C_s²)` variability term, so both models converge to near-identical results at saturation.
 
 The GPSS model validates the same core queueing mechanics as the Python DES — arrivals, walltime-based routing, multi-server service, and finite-capacity blocking. (A GPSS limitation relevant only to the future aging extension is noted in [Section 11](#11-further-analysis--proposed-improvements).)
 

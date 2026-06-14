@@ -1,0 +1,340 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" id="Definitions_HPC" targetNamespace="http://hpc.queue.model" exporter="bpmn-js (https://demo.bpmn.io)" exporterVersion="18.16.0">
+  <collaboration id="Collaboration_HPC">
+    <participant id="Pool_HPC" name="HPC Batch Queue System" processRef="Process_HPC" />
+  </collaboration>
+  <process id="Process_HPC" isExecutable="false">
+    <laneSet id="LaneSet_1">
+      <lane id="Lane_JobSource" name="Job source">
+        <flowNodeRef>StartEvent_Arrivals</flowNodeRef>
+        <flowNodeRef>Task_SubmitJob</flowNodeRef>
+        <flowNodeRef>Gateway_Route</flowNodeRef>
+      </lane>
+      <lane id="Lane_Short" name="Short partition (t &#60; 1h)">
+        <flowNodeRef>EndEvent_BlockShort</flowNodeRef>
+        <flowNodeRef>Task_QueueShort</flowNodeRef>
+        <flowNodeRef>Gateway_AdmitShort</flowNodeRef>
+      </lane>
+      <lane id="Lane_Standard" name="Standard partition (t &#60; 48h)">
+        <flowNodeRef>EndEvent_BlockStandard</flowNodeRef>
+        <flowNodeRef>Task_QueueStandard</flowNodeRef>
+        <flowNodeRef>Gateway_AdmitStandard</flowNodeRef>
+      </lane>
+      <lane id="Lane_Long" name="Long partition (t ≥ 48h)">
+        <flowNodeRef>EndEvent_BlockLong</flowNodeRef>
+        <flowNodeRef>Task_QueueLong</flowNodeRef>
+        <flowNodeRef>Gateway_AdmitLong</flowNodeRef>
+      </lane>
+      <lane id="Lane_Compute" name="Compute nodes">
+        <flowNodeRef>EndEvent_JobDone</flowNodeRef>
+        <flowNodeRef>Gateway_0vwca25</flowNodeRef>
+        <flowNodeRef>Task_ExecShort</flowNodeRef>
+        <flowNodeRef>Task_ExecStandard</flowNodeRef>
+        <flowNodeRef>Task_ExecLong</flowNodeRef>
+      </lane>
+    </laneSet>
+    <startEvent id="StartEvent_Arrivals" name="Job arrivals&#10;A = M(λ)">
+      <outgoing>Flow_Start_Submit</outgoing>
+    </startEvent>
+    <task id="Task_SubmitJob" name="Submit job&#10;(walltime, cores)">
+      <incoming>Flow_Start_Submit</incoming>
+      <outgoing>Flow_Submit_Route</outgoing>
+    </task>
+    <endEvent id="EndEvent_BlockShort" name="Blocked (short full)">
+      <incoming>Flow_AdmitShort_Block</incoming>
+    </endEvent>
+    <endEvent id="EndEvent_BlockStandard" name="Blocked (standard full)">
+      <incoming>Flow_AdmitStandard_Block</incoming>
+    </endEvent>
+    <endEvent id="EndEvent_BlockLong" name="Blocked (long full)">
+      <incoming>Flow_AdmitLong_Block</incoming>
+    </endEvent>
+    <sequenceFlow id="Flow_Start_Submit" sourceRef="StartEvent_Arrivals" targetRef="Task_SubmitJob" />
+    <sequenceFlow id="Flow_Submit_Route" sourceRef="Task_SubmitJob" targetRef="Gateway_Route" />
+    <sequenceFlow id="Flow_Route_Standard" name="t &#60; 1h" sourceRef="Gateway_Route" targetRef="Gateway_AdmitShort" />
+    <sequenceFlow id="Flow_Route_Long" name="t ≥ 48h" sourceRef="Gateway_Route" targetRef="Gateway_AdmitLong" />
+    <sequenceFlow id="Flow_AdmitShort_Queue" name="admit" sourceRef="Gateway_AdmitShort" targetRef="Task_QueueShort" />
+    <sequenceFlow id="Flow_AdmitShort_Block" name="N full" sourceRef="Gateway_AdmitShort" targetRef="EndEvent_BlockShort" />
+    <sequenceFlow id="Flow_AdmitStandard_Queue" name="admit" sourceRef="Gateway_AdmitStandard" targetRef="Task_QueueStandard" />
+    <sequenceFlow id="Flow_AdmitStandard_Block" name="N full" sourceRef="Gateway_AdmitStandard" targetRef="EndEvent_BlockStandard" />
+    <sequenceFlow id="Flow_AdmitLong_Queue" name="admit" sourceRef="Gateway_AdmitLong" targetRef="Task_QueueLong" />
+    <sequenceFlow id="Flow_AdmitLong_Block" name="N full" sourceRef="Gateway_AdmitLong" targetRef="EndEvent_BlockLong" />
+    <sequenceFlow id="Flow_LongQueue_Exec" sourceRef="Task_QueueLong" targetRef="Task_ExecLong" />
+    <task id="Task_QueueShort" name="Short FIFO queue&#10;N=50, max 1h">
+      <incoming>Flow_AdmitShort_Queue</incoming>
+      <outgoing>Flow_0c69qb3</outgoing>
+    </task>
+    <sequenceFlow id="Flow_0c69qb3" sourceRef="Task_QueueShort" targetRef="Task_ExecShort" />
+    <task id="Task_QueueStandard" name="Standard FIFO queue&#10;N=200, max 48h">
+      <incoming>Flow_AdmitStandard_Queue</incoming>
+      <outgoing>Flow_00cpac2</outgoing>
+    </task>
+    <task id="Task_QueueLong" name="Long FIFO queue&#10;N=100, no limit">
+      <incoming>Flow_AdmitLong_Queue</incoming>
+      <outgoing>Flow_LongQueue_Exec</outgoing>
+    </task>
+    <sequenceFlow id="Flow_00cpac2" sourceRef="Task_QueueStandard" targetRef="Task_ExecStandard" />
+    <exclusiveGateway id="Gateway_Route" name="Route by walltime">
+      <incoming>Flow_Submit_Route</incoming>
+      <outgoing>Flow_Route_Standard</outgoing>
+      <outgoing>Flow_Route_Long</outgoing>
+      <outgoing>Flow_1oxfhrv</outgoing>
+    </exclusiveGateway>
+    <exclusiveGateway id="Gateway_AdmitShort" name="N_short ok?">
+      <incoming>Flow_Route_Standard</incoming>
+      <outgoing>Flow_AdmitShort_Queue</outgoing>
+      <outgoing>Flow_AdmitShort_Block</outgoing>
+    </exclusiveGateway>
+    <exclusiveGateway id="Gateway_AdmitStandard" name="N_standard ok?">
+      <incoming>Flow_1oxfhrv</incoming>
+      <outgoing>Flow_AdmitStandard_Queue</outgoing>
+      <outgoing>Flow_AdmitStandard_Block</outgoing>
+    </exclusiveGateway>
+    <exclusiveGateway id="Gateway_AdmitLong" name="N_long ok?">
+      <incoming>Flow_Route_Long</incoming>
+      <outgoing>Flow_AdmitLong_Queue</outgoing>
+      <outgoing>Flow_AdmitLong_Block</outgoing>
+    </exclusiveGateway>
+    <sequenceFlow id="Flow_1oxfhrv" name="t &#60; 48h" sourceRef="Gateway_Route" targetRef="Gateway_AdmitStandard" />
+    <sequenceFlow id="Flow_Merge_End" sourceRef="Gateway_0vwca25" targetRef="EndEvent_JobDone" />
+    <sequenceFlow id="Flow_ExecLong_Merge" sourceRef="Task_ExecLong" targetRef="Gateway_0vwca25" />
+    <sequenceFlow id="Flow_ExecStandard_Merge" sourceRef="Task_ExecStandard" targetRef="Gateway_0vwca25" />
+    <sequenceFlow id="Flow_ExecShort_Merge" sourceRef="Task_ExecShort" targetRef="Gateway_0vwca25" />
+    <endEvent id="EndEvent_JobDone" name="Job done">
+      <incoming>Flow_Merge_End</incoming>
+    </endEvent>
+    <exclusiveGateway id="Gateway_0vwca25">
+      <incoming>Flow_ExecLong_Merge</incoming>
+      <incoming>Flow_ExecStandard_Merge</incoming>
+      <incoming>Flow_ExecShort_Merge</incoming>
+      <outgoing>Flow_Merge_End</outgoing>
+    </exclusiveGateway>
+    <task id="Task_ExecShort" name="Execute (short)&#10;S=G, c=16 nodes">
+      <incoming>Flow_0c69qb3</incoming>
+      <outgoing>Flow_ExecShort_Merge</outgoing>
+    </task>
+    <task id="Task_ExecStandard" name="Execute (standard)&#10;S=G, c=64 nodes">
+      <incoming>Flow_00cpac2</incoming>
+      <outgoing>Flow_ExecStandard_Merge</outgoing>
+    </task>
+    <task id="Task_ExecLong" name="Execute (long)&#10;S=G, c=32 nodes">
+      <incoming>Flow_LongQueue_Exec</incoming>
+      <outgoing>Flow_ExecLong_Merge</outgoing>
+    </task>
+  </process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="Collaboration_HPC">
+      <bpmndi:BPMNShape id="Pool_HPC_di" bpmnElement="Pool_HPC" isHorizontal="true">
+        <dc:Bounds x="130" y="40" width="880" height="840" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_Compute_di" bpmnElement="Lane_Compute" isHorizontal="true">
+        <dc:Bounds x="160" y="550" width="850" height="330" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_Long_di" bpmnElement="Lane_Long" isHorizontal="true">
+        <dc:Bounds x="160" y="420" width="850" height="130" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_Standard_di" bpmnElement="Lane_Standard" isHorizontal="true">
+        <dc:Bounds x="160" y="290" width="850" height="130" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_Short_di" bpmnElement="Lane_Short" isHorizontal="true">
+        <dc:Bounds x="160" y="160" width="850" height="130" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_JobSource_di" bpmnElement="Lane_JobSource" isHorizontal="true">
+        <dc:Bounds x="160" y="40" width="850" height="120" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="StartEvent_Arrivals_di" bpmnElement="StartEvent_Arrivals">
+        <dc:Bounds x="212" y="82" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="202" y="46" width="57" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_SubmitJob_di" bpmnElement="Task_SubmitJob">
+        <dc:Bounds x="300" y="70" width="120" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_BlockShort_di" bpmnElement="EndEvent_BlockShort">
+        <dc:Bounds x="932" y="212" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="908" y="255" width="84" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_BlockStandard_di" bpmnElement="EndEvent_BlockStandard">
+        <dc:Bounds x="932" y="342" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="904" y="385" width="92" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_BlockLong_di" bpmnElement="EndEvent_BlockLong">
+        <dc:Bounds x="932" y="472" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="910" y="515" width="80" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_QueueShort_di" bpmnElement="Task_QueueShort">
+        <dc:Bounds x="300" y="200" width="120" height="60" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_QueueStandard_di" bpmnElement="Task_QueueStandard">
+        <dc:Bounds x="280" y="330" width="140" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_QueueLong_di" bpmnElement="Task_QueueLong">
+        <dc:Bounds x="280" y="460" width="140" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_Route_di" bpmnElement="Gateway_Route" isMarkerVisible="true">
+        <dc:Bounds x="565" y="75" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="547" y="53" width="87" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_AdmitShort_di" bpmnElement="Gateway_AdmitShort" isMarkerVisible="true">
+        <dc:Bounds x="565" y="205" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="560" y="262" width="60" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_AdmitStandard_di" bpmnElement="Gateway_AdmitStandard" isMarkerVisible="true">
+        <dc:Bounds x="565" y="335" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="551" y="392" width="78" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_AdmitLong_di" bpmnElement="Gateway_AdmitLong" isMarkerVisible="true">
+        <dc:Bounds x="565" y="465" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="562" y="522" width="56" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_JobDone_di" bpmnElement="EndEvent_JobDone">
+        <dc:Bounds x="932" y="792" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="927" y="833" width="46" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_1nmxxoq_di" bpmnElement="Gateway_0vwca25" isMarkerVisible="true">
+        <dc:Bounds x="505" y="725" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_ExecShort_di" bpmnElement="Task_ExecShort">
+        <dc:Bounds x="280" y="630" width="140" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_ExecStandard_di" bpmnElement="Task_ExecStandard">
+        <dc:Bounds x="460" y="630" width="140" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_ExecLong_di" bpmnElement="Task_ExecLong">
+        <dc:Bounds x="640" y="630" width="140" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_Start_Submit_di" bpmnElement="Flow_Start_Submit">
+        <di:waypoint x="248" y="100" />
+        <di:waypoint x="300" y="100" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Submit_Route_di" bpmnElement="Flow_Submit_Route">
+        <di:waypoint x="420" y="100" />
+        <di:waypoint x="565" y="100" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Route_Standard_di" bpmnElement="Flow_Route_Standard">
+        <di:waypoint x="590" y="125" />
+        <di:waypoint x="590" y="205" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="594" y="133" width="28" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Route_Long_di" bpmnElement="Flow_Route_Long">
+        <di:waypoint x="615" y="100" />
+        <di:waypoint x="750" y="100" />
+        <di:waypoint x="750" y="440" />
+        <di:waypoint x="590" y="440" />
+        <di:waypoint x="590" y="465" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="753" y="133" width="34" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_AdmitShort_Queue_di" bpmnElement="Flow_AdmitShort_Queue">
+        <di:waypoint x="565" y="230" />
+        <di:waypoint x="420" y="230" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="526.0000000000001" y="212" width="27" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_AdmitShort_Block_di" bpmnElement="Flow_AdmitShort_Block">
+        <di:waypoint x="615" y="230" />
+        <di:waypoint x="932" y="230" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="814" y="212" width="26" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_AdmitStandard_Queue_di" bpmnElement="Flow_AdmitStandard_Queue">
+        <di:waypoint x="565" y="360" />
+        <di:waypoint x="420" y="360" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="526" y="342" width="27" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_AdmitStandard_Block_di" bpmnElement="Flow_AdmitStandard_Block">
+        <di:waypoint x="615" y="360" />
+        <di:waypoint x="932" y="360" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="814" y="342" width="26" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_AdmitLong_Queue_di" bpmnElement="Flow_AdmitLong_Queue">
+        <di:waypoint x="565" y="490" />
+        <di:waypoint x="420" y="490" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="526" y="472" width="27" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_AdmitLong_Block_di" bpmnElement="Flow_AdmitLong_Block">
+        <di:waypoint x="615" y="490" />
+        <di:waypoint x="932" y="490" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="814" y="472" width="26" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_LongQueue_Exec_di" bpmnElement="Flow_LongQueue_Exec">
+        <di:waypoint x="390" y="520" />
+        <di:waypoint x="390" y="590" />
+        <di:waypoint x="710" y="590" />
+        <di:waypoint x="710" y="630" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_0c69qb3_di" bpmnElement="Flow_0c69qb3">
+        <di:waypoint x="420" y="250" />
+        <di:waypoint x="470" y="250" />
+        <di:waypoint x="470" y="570" />
+        <di:waypoint x="350" y="570" />
+        <di:waypoint x="350" y="630" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_00cpac2_di" bpmnElement="Flow_00cpac2">
+        <di:waypoint x="420" y="380" />
+        <di:waypoint x="500" y="380" />
+        <di:waypoint x="500" y="630" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_1oxfhrv_di" bpmnElement="Flow_1oxfhrv">
+        <di:waypoint x="615" y="100" />
+        <di:waypoint x="680" y="100" />
+        <di:waypoint x="680" y="310" />
+        <di:waypoint x="590" y="310" />
+        <di:waypoint x="590" y="335" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="683" y="133" width="34" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Merge_End_di" bpmnElement="Flow_Merge_End">
+        <di:waypoint x="530" y="775" />
+        <di:waypoint x="530" y="810" />
+        <di:waypoint x="932" y="810" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ExecLong_Merge_di" bpmnElement="Flow_ExecLong_Merge">
+        <di:waypoint x="710" y="690" />
+        <di:waypoint x="710" y="750" />
+        <di:waypoint x="555" y="750" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ExecStandard_Merge_di" bpmnElement="Flow_ExecStandard_Merge">
+        <di:waypoint x="530" y="690" />
+        <di:waypoint x="530" y="725" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ExecShort_Merge_di" bpmnElement="Flow_ExecShort_Merge">
+        <di:waypoint x="350" y="690" />
+        <di:waypoint x="350" y="750" />
+        <di:waypoint x="505" y="750" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</definitions>
