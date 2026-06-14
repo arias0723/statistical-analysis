@@ -446,9 +446,42 @@ Three observations motivate this as future work:
 
 ## Annexes
 
-### Annex A — RNG Validation (R)
+### Annex A — RNG Validation
 
-> 🔲 *Placeholder — LCG implementation and `randtoolbox` test battery. Template provided in assignment PDF (pages 4–6). Minimum 5 tests: Gap, Frequency, Order, Serial, Runs.*
+**Methodology.** The assignment PDF specifies a Linear Congruential Generator (LCG) with `m=2^31, a=1103515245, c=12345` and an R/`randtoolbox` battery (Gap, Frequency, Order tests). R/`randtoolbox` is not available in this environment; the same five tests were implemented in Python (`scipy.stats`) and applied to two generators on a sequence of N=10,000 values, seed=42:
+
+1. **The LCG specified in the PDF** — the worked example for *how* to validate a generator.
+2. **Python's Mersenne Twister** (`random.random()`) — the actual generator behind `util.exponential()` and `util.lognormal()` used throughout the Python DES (Sections 6–8). This sequence is the one that matters for trusting the report's main results.
+
+**Test battery:**
+
+| Test | What it detects | H0 |
+|------|------------------|-----|
+| A. Frequency (Kolmogorov-Smirnov) | Global non-uniformity over [0,1) | x ~ Uniform(0,1) |
+| B. Gap | Clustering/voids — gap lengths between hits in [0, 0.5) | gap lengths ~ Geometric(0.5) |
+| C. Order (d=4) | Higher-dimensional correlation via permutation patterns of 4-tuples | all 4! orderings equally likely |
+| D. Runs (up/down) | Trends/oscillation patterns | run count matches independence |
+| E. Serial (lag-1 autocorrelation) | Correlation between consecutive draws | corr(x_i, x_{i+1}) = 0 |
+
+A p-value ≥ 0.05 fails to reject H0 ("appears random"); p < 0.05 indicates a detected pattern.
+
+**Results (N=10,000, seed=42):**
+
+| Test | LCG statistic | LCG p-value | LCG verdict | MT statistic | MT p-value | MT verdict |
+|------|--------------|-------------|-------------|--------------|------------|------------|
+| A. Frequency | 0.00665 | 0.765 | RANDOM | 0.00626 | 0.826 | RANDOM |
+| B. Gap | 8.522 | 0.483 | RANDOM | 7.169 | 0.620 | RANDOM |
+| C. Order (d=4) | 29.389 | 0.168 | RANDOM | 25.779 | 0.311 | RANDOM |
+| D. Runs | -0.293 | 0.770 | RANDOM | 0.016 | 0.987 | RANDOM |
+| E. Serial (lag-1) | 0.00035 | 0.972 | RANDOM | 0.00440 | 0.660 | RANDOM |
+
+**Interpretation.** Both generators pass all five tests at α=0.05 — no test rejects the null hypothesis of randomness. Two points are worth noting:
+
+First, the LCG with these specific parameters (`a=1103515245, c=12345, m=2^31` — the classic glibc `rand()` constants) is known from the literature to have weaknesses in *higher-dimensional* lattice structure that this battery, at N=10,000, does not detect. A larger N or a dedicated spectral test (not in this battery) would be needed to expose them. This illustrates a general property of RNG testing: passing a finite battery is necessary but not sufficient evidence of suitability — it raises confidence without proving correctness.
+
+Second, and more directly relevant to this report: the **Mersenne Twister results are the ones that back the simulation's validity**. MT passes the same battery with comparable or better p-values across the board (notably the runs test, p=0.987, and the order test, p=0.311, both higher than the LCG's). Since `util.exponential()` and `util.lognormal()` both sample from `random.random()` via inverse-CDF transforms, the quality of the underlying uniform stream is what propagates into the inter-arrival and service-time distributions used in Sections 6–8. The MT results therefore support the assumption — implicit throughout the report — that the simulation's stochastic inputs behave as intended.
+
+**Reproducibility.** The full battery implementation is in `rng_validation.py`.
 
 ### Annex B — GPSS Model Source
 
@@ -471,12 +504,8 @@ TERMINATE                             → End event
 - `queue_model.py` — QueueModel (Kendall node) + Router (BPMN gateway)
 - `util.py` — Distribution samplers
 - `main.py` — Validation and HPC runs
-
+- `mmc_validation.py` — M/M/4 Erlang-C validation (Section 6.2)
+- `doe_runner.py` — 2³ factorial DOE runner (Section 8)
+- `rng_validation.py` — 5-test RNG battery, LCG vs Mersenne Twister (Annex A)
 
 ---
-
-## Notes / TODO
-
-- A few things worth flagging as you move forward. With aging moved to future work (§11), the baseline's strongest assumption is now SS_01 (the fixed routing split) — the DOE is built around stressing exactly that. The aging assumption that drew the most scrutiny (promoting into a full queue unconditionally) is captured as (A2) in §11 with a bounded variant noted. Also note that SD_01's CV = 1.5 is a reasonable default but you should cite a source or justify it if you have access to any real HPC trace datasets (there are public ones from LLNL and ANL).
-
-- The interesting thing to notice here is the relationship between c and traffic intensity ρ. Recall that ρ = λ / (c · μ), where μ is the service rate (1/mean service time). A partition with a high c can absorb a much higher arrival rate before becoming saturated. So giving Standard c=64 is essentially your model's way of saying "we know this partition will be hammered, so we provision it with the most resources." Whether that's enough resources is precisely what your simulation will answer.
