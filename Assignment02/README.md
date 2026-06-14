@@ -315,8 +315,7 @@ The remaining routing weight (1 − w_Standard) is split between Short and Long 
 | 7 | 30 | 0.80 | 80 | 0.600 | 0.0000 | 0.597 | 0.000 | 0.0000 | 0.000 | 0.0000 | 0.000 |
 | 8 | 60 | 0.80 | 80 | 1.200 | 2.8607 | 0.999 | 0.167 | 0.0000 | 0.000 | 0.0006 | 0.000 |
 
-![](./assets/03-fig03.png)
-> P_b Standard and P_b Long across the 8 runs, coloured by λ level.
+> 📊 **[FIGURE 3]** Grouped bar chart: P_b Standard and P_b Long across the 8 runs, coloured by λ level.
 
 ### 8.3 Effects Analysis
 
@@ -380,7 +379,22 @@ Hypothesis SS_01 (a fixed, deterministic walltime-based routing split) is the st
 
 ## 10. Results / Conclusions
 
-> 🔲 *Placeholder — synthesise from the baseline (§3.1) and the DOE (§8): Standard saturation is structural (driven by routing weights, not a hardware shortage), routing rebalancing and/or server reallocation as the primary levers, and the short/medium/long-term recommendations from §3.3. Note aging promotion (§11) as a complementary scheduler-side option for future work.*
+**The cluster's reported delays are a symptom of a structural imbalance, not a capacity shortfall.** At the baseline configuration (λ=45, weights 0.05/0.80/0.15, c=16/64/32), aggregate offered load is a comfortable ρ_total=0.804, yet the Standard partition alone runs at ρ=0.998 with W_q=3.97h and P_b=0.111, while Short and Long sit at ρ=0.28 and 0.42. The cause is the fixed routing split (SS_01): 80% of traffic is sent to Standard regardless of true runtime, concentrating nearly all congestion in one of three partitions.
+
+**The DOE confirms the imbalance is correctable through configuration, with two levers acting jointly.** The 2³ factorial (Section 8) shows that at low load (λ=30) routing weight and server allocation have no measurable effect — P_b_Standard=0 in every cell. Under overload (λ=60), the two levers combine to take P_b_Standard from 0.331 (current weights, current servers) down to 0.003 — a 99% reduction — when the Standard weight is lowered to 0.65 and its server count raised to 80. Neither change alone achieves this; the combination is required, consistent with the multiplicative form of ρ = λw/(cμ).
+
+**No configuration eliminates congestion — it relocates it.** The best DOE cell (run 6) trades Standard's blocking for a small but non-zero blocking in Long (P_b≈0.01), because the redistributed weight flows disproportionately there under the chosen 1:3 split. This "whack-a-mole" pattern is consistent across the report: the same relocation-not-elimination effect was observed with aging promotion (Section 11), where relieving Standard pushed congestion into Short. The implication is that any fix should be evaluated on *total system* blocking, not on the bottleneck partition in isolation.
+
+**The simulation engine is independently validated to within 3% across three methods.** M/M/1 and M/M/4 (Erlang-C) closed-form theory, the Python DES, and an independent GPSS World model all agree on W_q, ρ, and P_b for the no-aging baseline (Section 6, Section 9). Little's Law holds to within 0.1% in both validation cases. The trace log confirms correct event ordering and tie-breaking.
+
+**Recommendations**, in order of cost:
+
+1. **Zero-cost:** rebalance routing weights — reduce the Standard share from 0.80 toward 0.65, redistributing primarily to Short rather than Long to avoid creating a secondary bottleneck (Section 8.4).
+2. **Low-cost:** reallocate 16 nodes from Long to Standard (c: 64→80, 32→16), which the DOE shows compounds with weight rebalancing to a 99% reduction in blocking under overload.
+3. **No-cost, complementary:** enable aging-based priority promotion at a recalibrated threshold (t_age≈1.5h), which independently cut blocking by 96% in the preliminary sweep (Section 11) and could be combined with (1)–(2) for further gains — this combination is the natural next experiment.
+4. **Data-driven, long-term:** instrument the cluster to capture actual vs declared walltime, replacing the assumed routing weights and log-normal service parameters (SD_01, SS_01) with empirical distributions.
+
+The overall conclusion is that the system as specified is not under-provisioned in aggregate — it is **mis-routed**. Both the weight rebalancing and server reallocation levers are corrections to that routing, and the DOE shows they are complementary rather than redundant.
 
 ---
 
