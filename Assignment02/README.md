@@ -300,7 +300,7 @@ The remaining routing weight (1 − w_Standard) is split between Short and Long 
 
 **Response variables:** W_q and P_b for all three partitions (Standard is primary; Short and Long are tracked to detect a shifted bottleneck, as seen with aging in Section 11).
 
-**Replication:** single run per cell (seed=42, T=4000h), consistent with the baseline methodology in Section 3. Section 9.4/Annex A's RNG validation establishes that this seed produces a statistically well-behaved stream; multi-seed replication is noted as future work in Section 11.
+**Replication:** single run per cell (seed=42, T=4000h), consistent with the baseline methodology in Section 3. Section 9.2/Annex A's RNG validation establishes that this seed produces a statistically well-behaved stream; multi-seed replication is noted as future work in Section 11.
 
 ### 8.2 Results
 
@@ -349,31 +349,31 @@ Given the asymmetric cost (B is free, C requires hardware), the recommended next
 
 ## 9. Model Validation
 
-Validation is performed across six dimensions as specified in the assignment:
+The assignment specifies five validation methods; each is addressed in its own subsection, in the order given:
 
-### 9.1 Simulation Algorithm Verification
+### 9.1 Verify the Main Simulation Algorithm Implementation
 
-The event-driven engine is verified through closed-form comparison against both M/M/1 (single-server) and M/M/c (Erlang-C, multi-server) theory (Section 6.2). All metrics agree within 1.4% (M/M/1) and 0.3% (M/M/4) of theoretical predictions. Little's Law holds to within 0.1% in both cases, confirming internal consistency across single- and multi-server configurations.
+Two independent checks verify the event-driven engine itself.
 
-### 9.2 Trace Verification
+**Theoretical comparison.** The engine is validated against closed-form M/M/1 (single-server) and M/M/4 Erlang-C (multi-server) theory (Section 6.2). All metrics agree within 1.4% (M/M/1) and 0.3% (M/M/4) of theoretical predictions. Little's Law holds to within 0.1% in both cases — confirming the core event loop, queueing, and dispatch logic are correct for both single- and multi-server configurations.
 
-The trace log (Section 6.4) confirms monotonic clock advancement, correct tie-breaking priority (Departure < Arrival), and expected queue dynamics at ρ=0.75.
+**Trace inspection.** The trace log (Section 6.4) confirms monotonic clock advancement, correct tie-breaking priority (Departure before Arrival on ties), and queue dynamics consistent with ρ=0.75 — verifying the implementation step-by-step rather than only at the aggregate-statistic level.
 
-### 9.3 Cross-Validation (GPSS)
+### 9.2 Verify the RNG Implementation and Validate its Parametrization
 
-The Python DES is cross-validated against an independent GPSS World implementation (Section 6.3). All seven metrics agree within 3%.
+A five-test battery (Frequency/KS, Gap, Order, Runs, Serial) was run on both the LCG specified by the assignment and on Python's Mersenne Twister — the generator behind `util.exponential()`/`util.lognormal()` used throughout the simulation. Both generators pass all five tests at α=0.05 (full results in Annex A). The Mersenne Twister result is the one that matters for trusting Sections 6–8: it confirms the uniform stream feeding the inter-arrival and service-time samplers shows no detected non-randomness at N=10,000.
 
-### 9.4 RNG Validation
+### 9.3 Validate the Experimental Framework
 
-> 🔲 *Placeholder — LCG implementation, 5-test battery using `randtoolbox` in R (Gap, Frequency, Order, Serial, Runs tests). Template provided in assignment PDF.*
+The experimental framework — how each run is conducted and how transient bias is handled — is validated via the warm-up analysis: the M/M/1 model was run at T=5,000h (8.9% error vs theory) and T=50,000h (1.37% error), with the error reduction proportional to 1/T as classical theory predicts. The `reset_statistics()` method implements warm-up deletion (matching GPSS World's `RESET`), used in the GPSS validation (500h warm-up + 4000h collection, Section 6.3). The DOE (Section 8) reuses this same framework — T=4000h, single seed=42 per cell — so its validity rests on the same warm-up justification.
 
-### 9.5 Warm-up Analysis
+### 9.4 Validate the Model Assumptions
 
-The transient bias is quantified by running the M/M/1 model at two durations: T=5,000h (8.9% error) and T=50,000h (1.37% error). The error reduction is proportional to 1/T, confirming classical warm-up convergence. The `reset_statistics()` method provides a clean warm-up deletion mechanism matching GPSS World's `RESET` command. GPSS validation uses 500h warm-up followed by 4000h collection.
+Hypothesis SS_01 (a fixed, deterministic walltime-based routing split) is the strongest structural assumption: it drives the entire load imbalance described in Section 3. The baseline encodes the over-declaration bias as static weights [0.05, 0.80, 0.15]; the DOE (Section 8) treats these weights as a controllable factor specifically to test how sensitive system performance is to this assumption — and finds it highly sensitive under overload (Finding 1, Section 8.3). SD_01 (log-normal service with CV=1.5) is the strongest data assumption; at saturation, W_q is dominated by the congestion term `1/(1-ρ)` rather than the service-variability term `(1+C_s²)` (Section 6.3), which bounds its impact on the baseline conclusions.
 
-### 9.6 Model Assumptions Validation
+### 9.5 Validate the Results
 
-Hypothesis SS_01 (a fixed, deterministic walltime-based routing split) is the strongest structural assumption: it drives the entire load imbalance. The baseline encodes the over-declaration bias as static weights [0.05, 0.80, 0.15]; the DOE (Section 8) treats these weights as a controllable factor precisely to test how sensitive system performance is to this assumption. SD_01 (log-normal service with CV=1.5) is the strongest data assumption; at saturation, W_q is dominated by the congestion term rather than service variability (Section 6.3), which bounds its impact on the baseline conclusions.
+The Python DES results are validated against an independent GPSS World implementation of the same system (Section 6.3). All seven response metrics (W_q and ρ for all three partitions, plus P_b Standard) agree within 3% on the no-aging baseline — an independent re-implementation in a different simulation paradigm produces the same conclusions, which is the strongest available evidence that the reported results reflect the model rather than an artefact of one implementation.
 
 ---
 
