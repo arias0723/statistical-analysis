@@ -339,8 +339,12 @@ The remaining routing weight (1 − w_Standard) is split between Short and Long 
 
 Values are mean ± 95% CI across R=10 replications; entries shown as a single value (e.g. `0.000`) had zero variance across all replications. Runs 2/6, 1/5, 3/7, and 4/8 differ only in c_Standard — under CRN, their Short- and Long-partition entries are identical, as the design intends (Section 8.1). Raw per-replication data: `doe_results.csv`.
 
-TODO: add fig
-> 📊 **[FIGURE 3]** Grouped bar chart: P_b Standard and P_b Long across the 8 runs, coloured by λ level.
+![fig03](./assets/03-fig03.png)
+
+What it shows, matching the values exactly:
+- All four λ=30 runs (1, 3, 5, 7) are flat zero — at moderate load nothing blocks, regardless of weight or server count (Finding 1).
+- λ=60 Standard blocking is severe at the current config (run 4: 0.332), drops to 0.166 with more servers (run 8), and collapses to 0.003 in run 6 (w=0.65, c=80) — the recommended cell.
+- Long blocking appears only in runs 2 and 6 (both 0.011) — the redistribution runs where weight shifts off Standard onto Long (Finding 3, identical under CRN).
 
 ### 8.3 Effects Analysis
 
