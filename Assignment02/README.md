@@ -132,15 +132,15 @@ The full HPC system is described by a five-lane BPMN diagram:
 
 ### 5.2 BPMN-to-Simulation Legend
 
-| BPMN element | Symbol | Simulation parameter | Python construct | GPSS construct |
-|---|---|---|---|---|
-| Start event (thin ring) | ○ | A = M(λ), λ=45 jobs/h | `exponential(45)` | `GENERATE (Exponential(1,0,0.02222))` |
-| XOR gateway (route) | ◇ | Routing weights [0.05, 0.80, 0.15] | `Router._pick_partition()` | `TRANSFER .050 / .842` |
-| XOR gateway (admit) | ◇ | Capacity check N | `total_in_system >= self.capacity` | `TEST L (Q$+S$),N,BLOCKED` |
-| Task (queue) | □ | D = FIFO, N = {50, 200, 100} | `self.queue = deque()` | `QUEUE / DEPART` |
-| Task (execute) | □ | S = G(log-normal), c = {16, 64, 32} | `self.service_dist()` | `ENTER / ADVANCE / LEAVE` with `STORAGE` |
-| End event (blocked) | ◉ | P_b = blocked/total | `entities_dropped` | `SAVEVALUE SBLK+,1` |
-| End event (done) | ◉ | Job exits system | entity removed | `TERMINATE` |
+| BPMN element | Symbol | Simulation parameter | Python construct                   | GPSS construct                           |
+|---|---|---|------------------------------------|------------------------------------------|
+| Start event (thin ring) | ○ | A = M(λ), λ=45 jobs/h | `exponential(45)`                  | `GENERATE (Exponential(1,0,0.022222))`   |
+| XOR gateway (route) | ◇ | Routing weights [0.05, 0.80, 0.15] | `Router._pick_partition()`         | `TRANSFER .050 / .842`                   |
+| XOR gateway (admit) | ◇ | Capacity check N | `total_in_system >= self.capacity` | `TEST L (Q$+S$),N,BLOCKED`               |
+| Task (queue) | □ | D = FIFO, N = {50, 200, 100} | `self.queue = deque()`             | `QUEUE / DEPART`                         |
+| Task (execute) | □ | S = G(log-normal), c = {16, 64, 32} | `self.service_dist()`              | `ENTER / ADVANCE / LEAVE` with `STORAGE` |
+| End event (blocked) | ◉ | P_b = blocked/total | `entities_dropped`                 | `SAVEVALUE SBLK+,1`                      |
+| End event (done) | ◉ | Job exits system | entity removed                     | `TERMINATE`                              |
 
 ### 5.3 Modelling Decisions
 
@@ -339,6 +339,7 @@ The remaining routing weight (1 − w_Standard) is split between Short and Long 
 
 Values are mean ± 95% CI across R=10 replications; entries shown as a single value (e.g. `0.000`) had zero variance across all replications. Runs 2/6, 1/5, 3/7, and 4/8 differ only in c_Standard — under CRN, their Short- and Long-partition entries are identical, as the design intends (Section 8.1). Raw per-replication data: `doe_results.csv`.
 
+TODO: add fig
 > 📊 **[FIGURE 3]** Grouped bar chart: P_b Standard and P_b Long across the 8 runs, coloured by λ level.
 
 ### 8.3 Effects Analysis
@@ -417,7 +418,7 @@ The Python DES results are validated against an independent GPSS World implement
 **Recommendations**, in order of cost:
 
 1. **Zero-cost:** rebalance routing weights — reduce the Standard share from 0.80 toward 0.65, redistributing primarily to Short rather than Long to avoid creating a secondary bottleneck (Section 8.4).
-2. **Low-cost:** reallocate 16 nodes from Long to Standard (c: 64→80, 32→16), which the DOE shows compounds with weight rebalancing to a 99.2% reduction in P_b_Standard under overload.
+2. **Low-cost:** reallocate 16 nodes to Standard, which the DOE shows compounds with weight rebalancing to a 99.2% reduction in P_b_Standard under overload.
 3. **No-cost, complementary:** enable aging-based priority promotion at a recalibrated threshold (t_age≈1.5h), which independently cut blocking by 96% in the preliminary sweep (Section 11) and could be combined with (1)–(2) for further gains — this combination is the natural next experiment.
 4. **Data-driven, long-term:** instrument the cluster to capture actual vs declared walltime, replacing the assumed routing weights and log-normal service parameters (SD_01, SS_01) with empirical distributions.
 
@@ -514,34 +515,18 @@ A related parametrization check follows the same logic — compare observed mome
 
 ### Annex B — GPSS Model Source
 
-The validated GPSS World model is in `gpss/hpc_validation_v3_noaging.gps`. A parametrization self-test is in `gpss/hpc_lognormal_selftest.gps`, and raw per-replication results are in `gpss_xval_results.csv` (Section 6.3). Key GPSS blocks and their mapping to the BPMN:
+The validated GPSS World model is in `gpss/hpc_validation_final.gps`, and raw per-replication results are in `hpc_validation_results.csv` (Section 6.3). Key GPSS blocks and their mapping to the BPMN:
 
 ```
-GENERATE  (Exponential(1,0,IAT))                  → Start event (Poisson λ; IAT=1/λ)
-TRANSFER  .050,,SHORT_ENTER                       → XOR routing gateway
-TEST L    (Q$+S$),N,BLOCKED                       → Admission gateway
-QUEUE / DEPART                                    → FIFO waiting line
-ENTER / LEAVE  STORAGE                            → c-server pool
-ADVANCE   (LogNormal(stream,0,0.103820,1.085659)) → Log-normal service, mean=2h CV=1.5 (S=G, matches SD_01)
-GENERATE ,,500,1  / TERMINATE 1                   → Warm-up timer (fires once at clock=500)
-SAVEVALUE SARR,0 / SAVEVALUE SBLK,0               → Blocking-counter reset at warm-up boundary
-GENERATE ,,4500,1 / TERMINATE 1                   → Collection-end timer (fires once at clock=4500)
-TERMINATE                                         → End event
+* RUN PROCEDURE (do this for each replication):
+*   1. RMULT  s1,s2,s3,s4         <- four distinct seeds, e.g. 11,22,33,44
+*   2. START  1,NP                 (runs to clock=500: warm-up timer fires)
+*   3. SAVEVALUE SARR,0
+*   4. SAVEVALUE SBLK,0
+*   5. START  1,NP                 (runs to clock=4500: end timer fires; collection window = 4000h)
+*
+*   6. Read off with SHOW commands (see bottom of this file)
+*   7. To start the next replication: CLEAR, then go back to step 1 with a NEW set of seeds.
 ```
 
 IAT (mean inter-arrival time) is set per scenario: 0.022222h for λ=45 (saturated baseline) and 0.026316h for λ=38 (high-subcritical cross-check, Section 6.3). RNG streams 1 (arrivals/routing) and 2–4 (Short/Standard/Long service) are reseeded via `RMULT` between the 5 replications run per scenario.
-
-### Annex C — Python Source Files
-
-- `event.py` — Event with `(time, priority)` ordering
-- `simulator.py` — Event calendar with trace mode
-- `queue_model.py` — QueueModel (Kendall node) + Router (BPMN gateway)
-- `util.py` — Distribution samplers
-- `main.py` — Validation and HPC runs
-- `mmc_validation.py` — M/M/4 Erlang-C validation (Section 6.2)
-- `doe_runner.py` — 2³ factorial DOE runner, R=10 replications with per-partition CRN streams (Section 8)
-- `rng_validation.py` — 5-test RNG battery, LCG vs Mersenne Twister (Annex A)
-
-Raw per-replication DOE results (8 cells × 10 replications, 80 rows) are in `doe_results.csv` (Section 8).
-
----

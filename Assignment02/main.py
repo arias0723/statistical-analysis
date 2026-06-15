@@ -46,7 +46,7 @@ def run_hpc_cluster(arrival_lambda: float = 45.0,
                     weights=(0.05, 0.80, 0.15),
                     service_mean_h: float = 2.0,
                     service_cv: float = 1.5,
-                    aging: bool = True,
+                    aging: bool = False,
                     until: float = 4000.0,
                     seed: int = 42):
     """Run the 3-partition HPC batch-queue model (report sections 2–4).
@@ -74,7 +74,6 @@ def run_hpc_cluster(arrival_lambda: float = 45.0,
 
     standard = QueueModel(sim, "Standard", arrival_dist=None, service_dist=svc(),
                           servers=64, capacity=200, discipline='FIFO',
-                          # t_age=(6.0 if aging else None),
                           t_age=(3.0 if aging else None),
                           promote_to=(short if aging else None))
 
