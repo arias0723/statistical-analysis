@@ -1,0 +1,107 @@
+* ============================================================
+* HPC Batch Queue System - GPSS cross-validation, manual-run version
+* ------------------------------------------------------------
+* Service distribution matches the Python DES: log-normal,
+* mean = 2h, CV = 1.5.
+*
+* This GPSS World's LogNormal(stream,Locate,Scale,Shape) evaluates
+* as Locate + exp(Scale + Shape*Z) -- Scale is mu ADDITIVELY, not
+* exp(mu). Verified via hpc_lognormal_selftest.gps:
+*   LogNormal(stream,0,0.103820,1.085659) -> mean ~2.0, CV ~1.5
+* (mu=ln(2)-sigma^2/2=0.103820, sigma=sqrt(ln(1+1.5^2))=1.085659)
+*
+* RNG streams: 1 = arrivals + routing
+*              2 = Short service
+*              3 = Standard service
+*              4 = Long service
+*
+* EDIT THE GENERATE LINE BELOW to select lambda:
+*   lambda=45 -> IAT 0.022222   SATURATED       (offered rho_Std ~ 1.13)
+*   lambda=38 -> IAT 0.026316   HIGH-SUBCRIT.   (offered rho_Std ~ 0.95)  <- priority point
+*   lambda=30 -> IAT 0.033333   MODERATE        (offered rho_Std ~ 0.75)
+*
+* RUN PROCEDURE (do this for each replication):
+*   1. RMULT  s1,s2,s3,s4         <- four distinct seeds, e.g. 11,22,33,44
+*   2. START  1,NP                 (runs to clock=500: warm-up timer fires)
+*   3. SAVEVALUE SARR,0
+*   4. SAVEVALUE SBLK,0
+*   5. START  1,NP                 (runs to clock=4500: end timer fires;
+*                                    collection window = 4000h)
+*   6. Read off with SHOW commands (see bottom of this file)
+*   7. To start the next replication: CLEAR, then go back to step 1
+*      with a NEW set of seeds.
+* ============================================================
+           SIMULATE
+
+SHORT_SRV  STORAGE  16
+STD_SRV    STORAGE  64
+LONG_SRV   STORAGE  32
+
+           INITIAL  X$SARR,0
+           INITIAL  X$SBLK,0
+
+* ---- Arrival stream (Poisson lambda). EDIT IAT per scenario. ----
+           GENERATE  (Exponential(1,0,0.026316))
+
+* ---- Routing XOR gateway: weights [0.05, 0.80, 0.15] ----
+* .842 is conditional on the 95% surviving the first branch (0.842*0.95=0.80)
+           TRANSFER  .050,,SHORT_ENTER
+           TRANSFER  .842,,STD_ENTER
+           TRANSFER  ,LONG_ENTER
+
+* ---- Short partition: c=16, N=50 (system capacity), FIFO ----
+SHORT_ENTER TEST L   (Q$SH_WAIT+S$SHORT_SRV),50,SH_BLOCKED
+           QUEUE     SH_WAIT
+           ENTER     SHORT_SRV
+           DEPART    SH_WAIT
+           ADVANCE   (LogNormal(2,0,0.103820,1.085659))
+           LEAVE     SHORT_SRV
+           TERMINATE
+SH_BLOCKED TERMINATE
+
+* ---- Standard partition: c=64, N=200, FIFO. SARR/SBLK -> P_b ----
+STD_ENTER  SAVEVALUE SARR+,1
+           TEST L    (Q$STD_WAIT+S$STD_SRV),200,STD_BLK
+           QUEUE     STD_WAIT
+           ENTER     STD_SRV
+           DEPART    STD_WAIT
+           ADVANCE   (LogNormal(3,0,0.103820,1.085659))
+           LEAVE     STD_SRV
+           TERMINATE
+STD_BLK    SAVEVALUE SBLK+,1
+           TERMINATE
+
+* ---- Long partition: c=32, N=100, FIFO ----
+LONG_ENTER TEST L    (Q$LONG_WAIT+S$LONG_SRV),100,LONG_BLK
+           QUEUE     LONG_WAIT
+           ENTER     LONG_SRV
+           DEPART    LONG_WAIT
+           ADVANCE   (LogNormal(4,0,0.103820,1.085659))
+           LEAVE     LONG_SRV
+           TERMINATE
+LONG_BLK   TERMINATE
+
+* ---- Run-control timers (single-shot transactions) ----
+* Fires once at clock=500 (end of warm-up)
+           GENERATE  ,,500,1
+           TERMINATE 1
+
+* Fires once at clock=4500 (end of 4000h collection window)
+           GENERATE  ,,4500,1
+           TERMINATE 1
+
+* ============================================================
+* After step 5 above, read results with these SHOW commands
+* (type into the Command/Journal window):
+*
+*   SHOW QT$SH_WAIT          -> W_q Short  (hours)
+*   SHOW QT$STD_WAIT         -> W_q Standard
+*   SHOW QT$LONG_WAIT        -> W_q Long
+*   SHOW SR$SHORT_SRV/1000   -> rho Short
+*   SHOW SR$STD_SRV/1000     -> rho Standard
+*   SHOW SR$LONG_SRV/1000    -> rho Long
+*   SHOW X$SBLK/X$SARR       -> P_b Standard
+*
+* If SHOW won't evaluate an expression directly in your version,
+* read the raw SR$.../X$... values and do the division yourself.
+* ============================================================

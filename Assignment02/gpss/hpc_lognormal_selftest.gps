@@ -1,0 +1,23 @@
+* ============================================================
+* Self-test: verify LogNormal(stream,0,1.109400,1.085659)
+* gives mean ~= 2.0 and CV ~= 1.5 (std.dev ~= 3.0) in THIS GPSS World.
+*
+* Run this FIRST, before the main cross-validation model.
+* If MEAN and STD.DEV don't come out close to 2.0 / 3.0, the
+* Scale/Shape arguments need adjusting for your version.
+* ============================================================
+           SIMULATE
+
+SVC        TABLE   P1,0.25,0.25,80
+
+* Deterministic arrival spacing (1 time unit) - only used to draw
+* 100,000 independent LogNormal samples; timing is irrelevant here.
+* CORRECTED: this GPSS World's LogNormal(stream,Locate,Scale,Shape)
+* = Locate + exp(Scale + Shape*Z), i.e. Scale is used ADDITIVELY as
+* mu (not as exp(mu)). mu = ln(2) - sigma^2/2 = 0.103820.
+           GENERATE 1,,,100000
+           ASSIGN   1,(LogNormal(1,0,0.103820,1.085659))
+           TABULATE SVC
+           TERMINATE 1
+
+           START    100000

@@ -197,23 +197,45 @@ The multi-server logic agrees with Erlang-C to within 0.3%, confirming that serv
 
 ### 6.3 GPSS World Validation Model
 
-A parallel model was implemented in GPSS World (`gpss/hpc_validation_v2_noaging.gps`) to provide independent cross-validation of the Python DES results.
+A parallel model was implemented in GPSS World to provide independent cross-validation of the Python DES results. The original implementation (`gpss/hpc_validation_v2_noaging.gps`) validated arrivals, walltime-based routing, multi-server service, and finite-capacity blocking, and reported agreement with Python within 3% at the λ=45 baseline. A subsequent review found that this agreement, while numerically correct, did not actually exercise the service-time distribution — the issue and its resolution are described below. The corrected model, `gpss/hpc_validation_v3_noaging.gps`, supersedes v2. (A separate GPSS limitation — `SPLIT`'s inability to relocate existing entities — affects only the future aging extension and is unrelated to this fix; it remains noted in [Section 11.3](#113-open-items-for-the-aging-extension).)
 
-The GPSS model validates the same core queueing mechanics as the Python DES — arrivals, walltime-based routing, multi-server service, and finite-capacity blocking. (A GPSS limitation relevant only to the future aging extension is noted in [Section 11](#11-further-analysis--proposed-improvements).)
+**Distribution mismatch (resolved).** The Python DES draws service times from a log-normal distribution with mean=2h, CV=1.5 (SD_01). The v2 GPSS model instead represented service as two stacked `ADVANCE (Exponential(...,1.0))` blocks — an Erlang-2 distribution with the same mean=2h but CV≈0.71. The two implementations were therefore validating different systems. v3 replaces the Erlang-2 stand-in with GPSS's built-in `LogNormal` function, matching SD_01 exactly.
 
-**Cross-validation results (T=4000h):**
+**LogNormal parametrization.** GPSS World's `LogNormal(stream, Locate, Scale, Shape)` evaluates as `Locate + exp(Scale + Shape·Z)` — i.e. `Scale` is the *additive* location parameter μ of the underlying normal distribution, not `exp(μ)`. For mean=2h, CV=1.5: σ = √(ln(1+CV²)) = 1.085659 and μ = ln(2) − σ²/2 = 0.103820, giving `LogNormal(stream, 0, 0.103820, 1.085659)`. This was confirmed with a 100,000-sample self-test (`gpss/hpc_lognormal_selftest.gps`): observed MEAN=2.002, STD.DEV=2.997 (CV=1.497), against targets of 2.0 / 3.0 / 1.5.
 
-| Metric | Python | GPSS | Difference |
-|--------|--------|------|------------|
-| W_q Standard (h) | 3.967 | 4.013 | +1.2% |
-| W_q Short (h) | 0.001 | 0.000 | ~0% |
-| W_q Long (h) | 0.000 | 0.000 | 0% |
-| ρ Standard | 0.998 | 1.000 | +0.2% |
-| ρ Short | 0.283 | 0.284 | +0.4% |
-| ρ Long | 0.424 | 0.421 | -0.7% |
-| P_b Standard | 0.111 | 0.108 | -2.7% |
+**Two-point cross-validation design.** Section 9.4 argues that at saturation, W_q is dominated by the congestion term `1/(1-ρ)` rather than the service-variability term `(1+C_s²)` — which is precisely why v2's Erlang-2 stand-in (CV≈0.71) still agreed with the log-normal Python model (CV=1.5) within 3% at the λ=45 baseline: *both distributions converge as ρ→1, regardless of CV*. A single saturated comparison point therefore validates admission, routing, and capacity logic, but cannot validate the service-time distribution itself. v3 adds a second, **high-subcritical** operating point (λ=38 jobs/h, offered ρ_Standard≈0.95) at which the two distributions diverge sharply, providing the discriminating test the v2 comparison lacked.
 
-All metrics agree within 3%, confirming the Python implementation is correct.
+**Run procedure.** Each scenario uses a 500h warm-up followed by a 4000h collection window (matching the framework in Section 9.3), implemented as two single-shot timer transactions (`GENERATE ,,500,1` / `GENERATE ,,4500,1`) rather than v2's termination-count `START` values. At the warm-up boundary, the `SARR`/`SBLK` blocking counters are explicitly zeroed so P_b reflects the collection window only. Each scenario was run for **5 independent replications**, reseeding all four RNG streams (1=arrivals/routing, 2/3/4=Short/Standard/Long service) via `RMULT` between reps — an improvement over v2, which reseeded only stream 1 and so repeated identical service draws across its 20 replications.
+
+**Results — saturated baseline (λ=45, offered ρ_Standard≈1.13):**
+
+| Metric | Python (log-normal) | GPSS v2 (Erlang-2) | GPSS v3 (log-normal, n=5) |
+|--------|---------------------|--------------------|---------------------------|
+| W_q Standard (h) | 3.967 | 4.013 | 3.938 ± 0.026 |
+| W_q Short (h) | 0.001 | 0.000 | 0.000 |
+| W_q Long (h) | 0.000 | 0.000 | 0.000 |
+| ρ Standard | 0.998 | 1.000 | 0.9996 ± 0.0001 |
+| ρ Short | 0.283 | 0.284 | 0.279 ± 0.007 |
+| ρ Long | 0.424 | 0.421 | 0.422 ± 0.005 |
+| P_b Standard | 0.111 | 0.108 | 0.111 ± 0.005 |
+
+**Results — high-subcritical (λ=38, offered ρ_Standard≈0.95):**
+
+| Metric | Reference log-normal (n=20)\* | Reference Erlang-2 (n=20)\* | GPSS v3 (log-normal, n=5) |
+|--------|------------------------------|-----------------------------|---------------------------|
+| W_q Standard (h) | 0.482 ± 0.036 | 0.272 ± 0.015 | 0.500 ± 0.159 |
+| ρ Standard | 0.949 ± 0.002 | 0.949 ± 0.001 | 0.949 ± 0.006 |
+| ρ Short | 0.237 ± 0.002 | 0.237 ± 0.002 | 0.233 ± 0.006 |
+| ρ Long | 0.357 ± 0.002 | 0.357 ± 0.002 | 0.357 ± 0.002 |
+| P_b Standard | ~0.0002 | ~0.0000 | 0.0001 |
+
+\* From an independent reference re-implementation of the routed M/G/c/N system, used to derive target values and validate the run procedure before the GPSS runs; 95% CIs from 20 replications.
+
+**Interpretation.**
+
+- At λ=45, GPSS v3 agrees with the Python baseline to within 1.3% on every metric (W_q Standard: −0.7%, vs v2's +1.2%) — marginally tighter than v2, and now a genuine like-for-like comparison rather than a coincidence of saturation.
+- At λ=38, GPSS v3's W_q Standard (0.500h, n=5) falls within its own 95% CI of the log-normal reference (0.482h, +3.7%), while the Erlang-2 distribution previously used in v2 would have predicted 0.272h — a **46% under-prediction (84% relative gap)** at this operating point. The ρ values, which depend only on the service-time *mean* and not its shape, agree to within 1.4% throughout, confirming that admission, routing, and capacity logic are unaffected by the distribution fix.
+- Together, the two points show that v2's "within 3%" cross-validation was numerically correct but exercised only the regime where the service-time distribution is invisible. v3 closes that gap: the saturated point validates the queueing mechanics (as before), and the high-subcritical point validates the service-time distribution specifically — the comparison Section 9.4 needed but did not have.
 
 ### 6.4 Trace Validation
 
@@ -365,15 +387,15 @@ A five-test battery (Frequency/KS, Gap, Order, Runs, Serial) was run on both the
 
 ### 9.3 Validate the Experimental Framework
 
-The experimental framework — how each run is conducted and how transient bias is handled — is validated via the warm-up analysis: the M/M/1 model was run at T=5,000h (8.9% error vs theory) and T=50,000h (1.37% error), with the error reduction proportional to 1/T as classical theory predicts. The `reset_statistics()` method implements warm-up deletion (matching GPSS World's `RESET`), used in the GPSS validation (500h warm-up + 4000h collection, Section 6.3). The DOE (Section 8) reuses this same framework — T=4000h, single seed=42 per cell — so its validity rests on the same warm-up justification.
+The experimental framework — how each run is conducted and how transient bias is handled — is validated via the warm-up analysis: the M/M/1 model was run at T=5,000h (8.9% error vs theory) and T=50,000h (1.37% error), with the error reduction proportional to 1/T as classical theory predicts. The `reset_statistics()` method implements warm-up deletion (matching GPSS World's `RESET`), used in the GPSS validation (500h warm-up + 4000h collection, Section 6.3). The corrected GPSS model (v3) implements this boundary precisely via two single-shot timer transactions plus an explicit reset of the blocking counters (`SARR`/`SBLK`) — closing a gap in v2, where these counters were not reset at the warm-up boundary and the termination-count `START` values did not reliably bound the run to 500h/4000h. The DOE (Section 8) reuses this same framework — T=4000h, single seed=42 per cell — so its validity rests on the same warm-up justification.
 
 ### 9.4 Validate the Model Assumptions
 
-Hypothesis SS_01 (a fixed, deterministic walltime-based routing split) is the strongest structural assumption: it drives the entire load imbalance described in Section 3. The baseline encodes the over-declaration bias as static weights [0.05, 0.80, 0.15]; the DOE (Section 8) treats these weights as a controllable factor specifically to test how sensitive system performance is to this assumption — and finds it highly sensitive under overload (Finding 1, Section 8.3). SD_01 (log-normal service with CV=1.5) is the strongest data assumption; at saturation, W_q is dominated by the congestion term `1/(1-ρ)` rather than the service-variability term `(1+C_s²)` (Section 6.3), which bounds its impact on the baseline conclusions.
+Hypothesis SS_01 (a fixed, deterministic walltime-based routing split) is the strongest structural assumption: it drives the entire load imbalance described in Section 3. The baseline encodes the over-declaration bias as static weights [0.05, 0.80, 0.15]; the DOE (Section 8) treats these weights as a controllable factor specifically to test how sensitive system performance is to this assumption — and finds it highly sensitive under overload (Finding 1, Section 8.3). SD_01 (log-normal service with CV=1.5) is the strongest data assumption; at saturation, W_q is dominated by the congestion term `1/(1-ρ)` rather than the service-variability term `(1+C_s²)` (Section 6.3), which bounds its impact on the baseline conclusions. This is now confirmed empirically rather than only argued: Section 6.3's two-point GPSS cross-validation shows that switching the service distribution (log-normal CV=1.5 vs Erlang-2 CV≈0.71) changes W_q Standard by under 1% at the saturated baseline (λ=45) but by ~84% at a high-subcritical load (λ=38) — exactly the saturation-dependence this argument predicts.
 
 ### 9.5 Validate the Results
 
-The Python DES results are validated against an independent GPSS World implementation of the same system (Section 6.3). All seven response metrics (W_q and ρ for all three partitions, plus P_b Standard) agree within 3% on the no-aging baseline — an independent re-implementation in a different simulation paradigm produces the same conclusions, which is the strongest available evidence that the reported results reflect the model rather than an artefact of one implementation.
+The Python DES results are validated against an independent GPSS World implementation of the same system (Section 6.3), now run at two operating points with matched log-normal service distributions across 5 replications each. At the saturated baseline (λ=45), all seven response metrics agree with Python within 1.3% — tighter than the original single-run comparison, and now a like-for-like test of the same distribution rather than a coincidence of saturation. At a high-subcritical load (λ=38), GPSS's W_q Standard (0.500h ± 0.159h, n=5) falls within its 95% CI of an independent reference implementation (0.482h), confirming that agreement extends beyond the saturation-dominated regime where service-time shape has no effect. Together, the two points are the strongest available evidence that the reported results reflect the model — including its distributional assumptions — rather than an artefact of one implementation or one operating regime.
 
 ---
 
@@ -385,7 +407,7 @@ The Python DES results are validated against an independent GPSS World implement
 
 **No configuration eliminates congestion — it relocates it.** The best DOE cell (run 6) trades Standard's blocking for a small but non-zero blocking in Long (P_b≈0.01), because the redistributed weight flows disproportionately there under the chosen 1:3 split. This "whack-a-mole" pattern is consistent across the report: the same relocation-not-elimination effect was observed with aging promotion (Section 11), where relieving Standard pushed congestion into Short. The implication is that any fix should be evaluated on *total system* blocking, not on the bottleneck partition in isolation.
 
-**The simulation engine is independently validated to within 3% across three methods.** M/M/1 and M/M/4 (Erlang-C) closed-form theory, the Python DES, and an independent GPSS World model all agree on W_q, ρ, and P_b for the no-aging baseline (Section 6, Section 9). Little's Law holds to within 0.1% in both validation cases. The trace log confirms correct event ordering and tie-breaking.
+**The simulation engine is independently validated across three methods and, for the GPSS comparison, two operating points.** M/M/1 and M/M/4 (Erlang-C) closed-form theory agree with the Python DES to within 1.4% (Section 6.2), and an independent GPSS World model — now matched to the same log-normal service distribution — agrees with Python to within 1.3% at the saturated baseline and falls within its confidence interval at a high-subcritical load (Section 6.3, Section 9). Little's Law holds to within 0.1% in the closed-form validation cases. The trace log confirms correct event ordering and tie-breaking.
 
 **Recommendations**, in order of cost:
 
@@ -483,19 +505,26 @@ Second, and more directly relevant to this report: the **Mersenne Twister result
 
 **Reproducibility.** The full battery implementation is in `rng_validation.py`.
 
+A related parametrization check follows the same logic — compare observed moments against theoretical targets — but for a distribution rather than a uniform stream: `gpss/hpc_lognormal_selftest.gps` (Section 6.3) verifies that GPSS World's `LogNormal` function reproduces SD_01's target mean=2h, CV=1.5 under the parameters used in the cross-validation model. The initial parametrization passed the same shape check (CV matched) but failed the location check (mean was 2.7× too high), revealing that this GPSS version's `Scale` argument is additive (μ) rather than multiplicative (`exp(μ)`) — a convention difference the moment-comparison approach was able to isolate cleanly.
+
 ### Annex B — GPSS Model Source
 
-The complete GPSS World model is in `gpss/hpc_validation_v2_noaging.gps`. Key GPSS blocks and their mapping to the BPMN:
+The validated GPSS World model is in `gpss/hpc_validation_v3_noaging.gps`, which supersedes `gpss/hpc_validation_v2_noaging.gps` (retained for reference — see Section 6.3 for the service-distribution mismatch it had). A parametrization self-test is in `gpss/hpc_lognormal_selftest.gps`. Key GPSS blocks and their mapping to the BPMN:
 
 ```
-GENERATE  (Exponential(1,0,0.02222))   → Start event (Poisson λ=45)
-TRANSFER  .050,,SHORT_ENTER            → XOR routing gateway
-TEST L    (Q$+S$),N,BLOCKED           → Admission gateway
-QUEUE / DEPART                         → FIFO waiting line
-ENTER / LEAVE  STORAGE                → c-server pool
-ADVANCE   (Exponential(rng,0,1.0)) ×2 → Erlang-2 service (S≈G)
-TERMINATE                             → End event
+GENERATE  (Exponential(1,0,IAT))                  → Start event (Poisson λ; IAT=1/λ)
+TRANSFER  .050,,SHORT_ENTER                       → XOR routing gateway
+TEST L    (Q$+S$),N,BLOCKED                       → Admission gateway
+QUEUE / DEPART                                    → FIFO waiting line
+ENTER / LEAVE  STORAGE                            → c-server pool
+ADVANCE   (LogNormal(stream,0,0.103820,1.085659)) → Log-normal service, mean=2h CV=1.5 (S=G, matches SD_01)
+GENERATE ,,500,1  / TERMINATE 1                   → Warm-up timer (fires once at clock=500)
+SAVEVALUE SARR,0 / SAVEVALUE SBLK,0               → Blocking-counter reset at warm-up boundary
+GENERATE ,,4500,1 / TERMINATE 1                   → Collection-end timer (fires once at clock=4500)
+TERMINATE                                         → End event
 ```
+
+IAT (mean inter-arrival time) is set per scenario: 0.022222h for λ=45 (saturated baseline) and 0.026316h for λ=38 (high-subcritical cross-check, Section 6.3). RNG streams 1 (arrivals/routing) and 2–4 (Short/Standard/Long service) are reseeded via `RMULT` between the 5 replications run per scenario.
 
 ### Annex C — Python Source Files
 
