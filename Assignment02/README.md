@@ -6,23 +6,32 @@
 
 ## 1. Executive Summary
 
-This report presents the discrete-event simulation (DES) of an HPC (High-Performance Computing) batch queueing system modelled using Kendall's notation. The system of interest is a multi-partition cluster scheduler — analogous to SLURM — in which jobs arrive following a Poisson process and are routed to one of three partitions (Short, Standard, Long) based on their declared walltime. Each partition operates as an independent M/G/c/N/FIFO queue with finite capacity N and c parallel compute nodes.
+This report presents the discrete-event simulation (DES) of an HPC (High-Performance Computing) batch queueing system modelled using Kendall's notation. 
+The system of interest is a multi-partition cluster scheduler in which jobs arrive following a Poisson process and are routed to one of three 
+partitions (Short, Standard, Long) based on their declared walltime. Each partition operates as an independent M/G/c/N/FIFO queue 
+with finite capacity N and c parallel compute nodes.
 
-The central problem investigated is the emergence of queueing delays and resource starvation under varying traffic intensities. The simulation is implemented in Python using an event-driven architecture, validated against closed-form M/M/1 and M/M/c (Erlang-C) predictions and an independent GPSS World model. A factorial design of experiments (DOE) explores the interaction between arrival rate, routing weights, and per-partition server allocation. Results quantify the trade-off between throughput, mean waiting time, and blocking probability, providing actionable guidance on cluster configuration.
+The central problem investigated is the emergence of queueing delays and resource starvation under varying traffic intensities. 
+The simulation is implemented in Python using an event-driven architecture, validated against closed-form M/M/1 and M/M/c predictions 
+and an independent GPSS World model. A factorial design of experiments (DOE) explores the interaction between arrival rate, 
+routing weights, and per-partition server allocation. Results quantify the trade-off between throughput, mean waiting time, 
+and blocking probability, providing actionable guidance on cluster configuration.
 
 ---
 
 ## 2. System Description
 
-The system under study is a shared HPC cluster operated by a university research computing centre. Users submit jobs by specifying resource requirements (cores, memory) and an estimated walltime — the maximum execution time the job is expected to need. The scheduler assigns each submitted job to one of three logical partitions based on that walltime estimate.
+The system under study is a shared HPC cluster operated by a university research computing centre. Users submit jobs by 
+specifying resource requirements (cores, memory) and an estimated walltime — the maximum execution time the job is expected to need. 
+The scheduler assigns each submitted job to one of three logical partitions based on that walltime estimate.
 
 ### 2.1 Partitions (Queue Classes)
 
-| Partition | Walltime limit | Nodes (c) | Queue cap. (N) | Typical workload |
-|-----------|---------------|-----------|----------------|-----------------|
-| Short | < 1 hour | 16 | 50 | Testing, interactive jobs, parameter sweeps |
-| Standard | < 48 hours | 64 | 200 | Simulations, data analysis, ML training |
-| Long | No limit | 32 | 100 | Multi-day genomics, climate, CFD runs |
+| Partition | Walltime limit | Nodes (c)  | Queue capacity (N) | Typical workload                            |
+|-----------|----------------|------------|--------------------|---------------------------------------------|
+| Short     | < 1 hour       | 16         | 50                 | Testing, interactive jobs, parameter sweeps |
+| Standard  | < 48 hours     | 64         | 200                | Simulations, data analysis, ML training     |
+| Long      | No limit       | 32         | 100                | Multi-day genomics, climate, CFD runs       |
 
 ### 2.2 Job Lifecycle
 
@@ -35,19 +44,17 @@ A job follows this sequence through the system:
 5. **Execution** — the job occupies one node for a duration drawn from service distribution S.
 6. **Completion** — the node is released; the scheduler dispatches the next queued job.
 
-> **Out of scope (baseline):** an aging-based *priority promotion* extension — where jobs waiting beyond a threshold are promoted to another partition — is deliberately excluded from this baseline model. It is specified and explored as future work in [Section 11](#11-further-analysis--proposed-improvements).
-
 ### 2.3 Kendall Parametrisation
 
 Each partition is independently characterised as M/G/c/N/FIFO:
 
-| Parameter | Value | Rationale |
-|-----------|-------|-----------|
-| A (arrivals) | M — Poisson (λ) | Memoryless inter-arrival times (SH_01) |
-| S (service) | G — Log-normal | HPC runtimes are right-skewed (SD_01) |
-| c (servers) | 16 / 64 / 32 | Short / Standard / Long node counts (SS_01) |
-| N (capacity) | 50 / 200 / 100 | Per-partition queue size limits (SS_02) |
-| D (discipline) | FIFO | Default scheduler discipline (SS_02) |
+| Parameter      | Value           | Rationale                                   |
+|----------------|-----------------|---------------------------------------------|
+| A (arrivals)   | M — Poisson (λ) | Memoryless inter-arrival times (SH_01)      |
+| S (service)    | G — Log-normal  | HPC runtimes are right-skewed (SD_01)       |
+| c (servers)    | 16 / 64 / 32    | Short / Standard / Long node counts (SS_01) |
+| N (capacity)   | 50 / 200 / 100  | Per-partition queue size limits (SS_02)     |
+| D (discipline) | FIFO            | Default scheduler discipline (SS_02)        |
 
 The full system is an interconnected network of three M/G/c/N/FIFO queues sharing a common Poisson arrival stream, differentiated by routing at entry.
 
@@ -55,9 +62,12 @@ The full system is an interconnected network of three M/G/c/N/FIFO queues sharin
 
 ## 3. Problem Description
 
-The stated concern is that some research jobs experience unexpectedly long waiting times even when aggregate cluster utilisation appears moderate. Through initial exploratory modelling, a more precise problem is identified:
+The stated concern is that some research jobs experience unexpectedly long waiting times even when aggregate cluster utilisation appears moderate. 
+Through initial exploratory modelling, a more precise problem is identified:
 
-> The Standard partition operates near saturation (ρ → 1) during peak submission windows, while Short and Long partitions remain underutilised. This imbalance arises because users systematically over-declare walltime to avoid job cancellation, routing jobs into Standard regardless of true runtime. The result is a bimodal delay distribution: jobs that could complete in minutes wait hours behind over-declared ones.
+> The Standard partition operates near saturation (ρ → 1) during peak submission windows, while Short and Long partitions remain underutilised. 
+> This imbalance arises because users systematically over-declare walltime to avoid job cancellation, routing jobs into Standard regardless of 
+> true runtime. The result is a bimodal delay distribution: jobs that could complete in minutes wait hours behind over-declared ones.
 
 The simulation is used to:
 
@@ -68,51 +78,57 @@ The simulation is used to:
 
 ### 3.1 Baseline Results
 
-The first simulation run (λ=45 jobs/h, routing weights Short=0.05 / Standard=0.80 / Long=0.15, T=4000h) produced the following steady-state metrics:
+The first simulation run (λ=45 jobs/h, routing weights Short=0.05 / Standard=0.80 / Long=0.15, T=4000h) produced the following metrics:
 
-| Partition | ρ | W_q (h) | L_q | P_b |
-|-----------|------|---------|-----|-----|
-| Short | 0.283 | 0.001 | 0.00 | 0.000 |
-| Standard | 0.998 | 3.967 | 126.65 | 0.111 |
-| Long | 0.424 | 0.000 | 0.00 | 0.000 |
+| Partition | ρ     | W_q (h) | L_q    | P_b   |
+|-----------|-------|---------|--------|-------|
+| Short     | 0.283 | 0.001   | 0.00   | 0.000 |
+| Standard  | 0.998 | 3.967   | 126.65 | 0.111 |
+| Long      | 0.424 | 0.000   | 0.00   | 0.000 |
 
-This confirms the structural imbalance identified in the problem statement. The aggregate offered load is ρ_total = 0.804 — suggesting the system has headroom — yet Standard alone operates at ρ = 0.998, effectively saturated. Short and Long combined hold 48 nodes (ρ < 0.45) while Standard's 64 nodes are never idle. The 11.1% blocking probability in Standard means roughly 1 in 9 jobs is rejected outright.
+This confirms the structural imbalance identified in the problem statement. The aggregate offered load is ρ_total = 0.804, 
+suggesting the system still has capacity, yet Standard alone operates at ρ = 0.998, effectively saturated. Short and Long combined 
+hold 48 nodes (ρ < 0.45) while Standard's 64 nodes are never idle. The 11.1% blocking probability in Standard means roughly 1 in 9 
+jobs is rejected outright.
 
 ![fig01](./assets/01-fig01.png)
 > ρ per partition at baseline. Short=0.283, Standard=0.998, Long=0.424.
 
 ### 3.2 Root Cause and Levers
 
-The baseline isolates the cause cleanly: the problem is the **routing-weight distribution**, not the raw amount of hardware. Assigning 80% of traffic to Standard regardless of actual runtime creates a structural overload while 48 nodes in Short and Long sit largely idle. Two levers can act on this imbalance directly, and both are studied in the DOE (Section 8):
+The baseline isolates the cause cleanly: the problem is the **routing-weight distribution**, not the raw amount of hardware. 
+Assigning 80% of traffic to Standard regardless of actual runtime creates a structural overload while 48 nodes in Short and Long 
+sit largely idle. Two levers can act on this imbalance directly, and both are studied in the DOE (Section 8):
 
-- **Routing weights** — shifting weight off Standard (e.g. from 0.80 toward 0.50–0.60) lowers Standard's offered ρ and should reduce both W_q and P_b, at the cost of loading the other partitions.
-- **Server allocation (c)** — since ρ = λ / (c · μ), moving nodes toward Standard raises its effective capacity. The DOE quantifies how much reallocation is needed to bring Standard's W_q under the 30-min bound.
+- **Routing weights** — shifting weight off Standard (e.g. from 0.80 toward 0.50–0.60) lowers Standard's offered ρ and should reduce 
+both W_q and P_b, at the cost of loading the other partitions.
+- **Server allocation (c)** — since ρ = λ / (c · μ), moving nodes toward Standard raises its effective capacity. The DOE quantifies 
+how much reallocation is needed to bring Standard's W_q under the 30-min bound.
 
 ### 3.3 Conclusion
 
 The actionable findings are:
 
-- **Short-term:** Rebalance routing weights to reflect actual walltime distributions — reducing the Standard weight from 0.80 toward 0.50–0.60 (quantified in Section 8).
+- **Short-term:** Rebalance routing weights to reflect actual walltime distributions, reducing the Standard weight from 0.80 toward 0.50–0.60 (quantified in Section 8).
 - **Medium-term:** Reallocate compute nodes toward the saturated Standard partition if rebalancing routing alone is insufficient.
 - **Long-term:** Instrument the cluster to collect actual vs declared walltime. Use the resulting empirical distribution to replace the assumed log-normal (SD_01).
 
-A complementary scheduler-side mitigation — **aging-based priority promotion** — was explored in a preliminary sweep and is documented as future work in [Section 11](#11-further-analysis--proposed-improvements).
+A complementary scheduler-side mitigation — **aging-based priority promotion** — was explored in a preliminary sweep and is documented 
+as future work in [Section 11](#11-further-analysis--proposed-improvements).
 
 ---
 
 ## 4. Systemic Hypotheses
 
-| ID | Class | Statement |
-|----|-------|-----------|
-| SH_01 | Simplifying | Job inter-arrival times are exponentially distributed. Correlated submissions (e.g. workflow chains) are ignored. |
-| SH_02 | Simplifying | Each job occupies exactly one compute node regardless of core count. Multi-node parallelism is abstracted away. |
-| SH_03 | Simplifying | The user population is infinite (open network). Re-submission after blocking is not modelled. |
-| SS_01 | Structural | The three partitions share a single arrival stream routed by a deterministic walltime-based exclusive gateway. |
-| SS_02 | Structural | Each partition is an independent FIFO queue with finite capacity N and c parallel servers. |
-| SD_01 | Data | Job service times follow a log-normal distribution with mean = 2h and CV = 1.5, representative of typical HPC traces in absence of empirical data. |
-| SD_02 | Data | Arrival rate λ is a controllable DOE factor, ranging from moderate load (ρ_total ≈ 0.54 at λ=30) to overload (ρ_total ≈ 1.07 at λ=60) relative to total system capacity. |
-
-*Scope note:* the baseline omits priority promotion (aging) and the assumptions it would introduce. The aging extension and its additional hypotheses are deferred to [Section 11](#11-further-analysis--proposed-improvements).
+| ID    | Class       | Statement                                                                                                                                                                |
+|-------|-------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| SH_01 | Simplifying | Job inter-arrival times are exponentially distributed. Correlated submissions (e.g. workflow chains) are ignored.                                                        |
+| SH_02 | Simplifying | Each job occupies exactly one compute node regardless of core count. Multi-node parallelism is abstracted away.                                                          |
+| SH_03 | Simplifying | The user population is infinite (open network). Re-submission after blocking is not modelled.                                                                            |
+| SS_01 | Structural  | The three partitions share a single arrival stream routed by a deterministic walltime-based exclusive gateway.                                                           |
+| SS_02 | Structural  | Each partition is an independent FIFO queue with finite capacity N and c parallel servers.                                                                               |
+| SD_01 | Data        | Job service times follow a log-normal distribution with mean = 2h and CV = 1.5, representative of typical HPC traces in absence of empirical data.                       |
+| SD_02 | Data        | Arrival rate λ is a controllable DOE factor, ranging from moderate load (ρ_total ≈ 0.54 at λ=30) to overload (ρ_total ≈ 1.07 at λ=60) relative to total system capacity. |
 
 ---
 
@@ -132,19 +148,21 @@ The full HPC system is described by a five-lane BPMN diagram:
 
 ### 5.2 BPMN-to-Simulation Legend
 
-| BPMN element | Symbol | Simulation parameter | Python construct                   | GPSS construct                           |
-|---|---|---|------------------------------------|------------------------------------------|
-| Start event (thin ring) | ○ | A = M(λ), λ=45 jobs/h | `exponential(45)`                  | `GENERATE (Exponential(1,0,0.022222))`   |
-| XOR gateway (route) | ◇ | Routing weights [0.05, 0.80, 0.15] | `Router._pick_partition()`         | `TRANSFER .050 / .842`                   |
-| XOR gateway (admit) | ◇ | Capacity check N | `total_in_system >= self.capacity` | `TEST L (Q$+S$),N,BLOCKED`               |
-| Task (queue) | □ | D = FIFO, N = {50, 200, 100} | `self.queue = deque()`             | `QUEUE / DEPART`                         |
-| Task (execute) | □ | S = G(log-normal), c = {16, 64, 32} | `self.service_dist()`              | `ENTER / ADVANCE / LEAVE` with `STORAGE` |
-| End event (blocked) | ◉ | P_b = blocked/total | `entities_dropped`                 | `SAVEVALUE SBLK+,1`                      |
-| End event (done) | ◉ | Job exits system | entity removed                     | `TERMINATE`                              |
+| BPMN element            | Symbol | Simulation parameter                | Python construct                   | GPSS construct                           |
+|-------------------------|--------|-------------------------------------|------------------------------------|------------------------------------------|
+| Start event (thin ring) | ○      | A = M(λ), λ=45 jobs/h               | `exponential(45)`                  | `GENERATE (Exponential(1,0,0.022222))`   |
+| XOR gateway (route)     | ◇      | Routing weights [0.05, 0.80, 0.15]  | `Router._pick_partition()`         | `TRANSFER .050 / .842`                   |
+| XOR gateway (admit)     | ◇      | Capacity check N                    | `total_in_system >= self.capacity` | `TEST L (Q$+S$),N,BLOCKED`               |
+| Task (queue)            | □      | D = FIFO, N = {50, 200, 100}        | `self.queue = deque()`             | `QUEUE / DEPART`                         |
+| Task (execute)          | □      | S = G(log-normal), c = {16, 64, 32} | `self.service_dist()`              | `ENTER / ADVANCE / LEAVE` with `STORAGE` |
+| End event (blocked)     | ◉      | P_b = blocked/total                 | `entities_dropped`                 | `SAVEVALUE SBLK+,1`                      |
+| End event (done)        | ◉      | Job exits system                    | entity removed                     | `TERMINATE`                              |
 
 ### 5.3 Modelling Decisions
 
-Two structural decisions are worth explicit justification. First, the XOR merge gateway at the bottom of the compute nodes lane is correct: each job completes in exactly one partition, so only one of the three incoming flows fires per token. Second, the three partitions are modelled as independent queues with no inter-partition flow (SS_01, SS_02); the only coupling is the shared arrival stream at the routing gateway. Relaxing this independence — via aging promotion between partitions — is the principal extension considered in Section 11.
+First, the XOR merge gateway at the bottom of the compute nodes lane is correct: each job completes in exactly one partition, 
+so only one of the three incoming flows fires per token. Second, the three partitions are modelled as independent queues with 
+no inter-partition flow (SS_01, SS_02); the only coupling is the shared arrival stream at the routing gateway.
 
 ---
 
@@ -154,92 +172,120 @@ Two structural decisions are worth explicit justification. First, the XOR merge 
 
 The simulator is implemented in Python across five modules:
 
-| Module | Responsibility |
-|--------|---------------|
-| `event.py` | Event dataclass with `(time, priority)` ordering for tie-breaking |
-| `simulator.py` | Central event calendar using `heapq`; advances clock by event; optional trace mode |
-| `queue_model.py` | `QueueModel` class (single Kendall node) and `Router` class (BPMN gateway) |
-| `util.py` | Distribution samplers: `exponential`, `deterministic`, `lognormal` |
-| `main.py` | Entry point: M/M/1 validation and HPC cluster runs |
+| Module           | Responsibility                                                                     |
+|------------------|------------------------------------------------------------------------------------|
+| `event.py`       | Event dataclass with `(time, priority)` ordering for tie-breaking                  |
+| `simulator.py`   | Central event calendar using `heapq`; advances clock by event; optional trace mode |
+| `queue_model.py` | `QueueModel` class (single Kendall node) and `Router` class (BPMN gateway)         |
+| `util.py`        | Distribution samplers: `exponential`, `deterministic`, `lognormal`                 |
+| `main.py`        | Entry point: M/M/1 validation and HPC cluster runs                                 |
 
-**Event-driven architecture.** The simulation clock never ticks — it jumps directly from event to event. The event calendar is a min-heap ordered by `(time, priority)`. Event types are defined with explicit tie-breaking priority:
+**Event-driven architecture.** The simulation clock never ticks, it jumps directly from event to event. The event calendar is a min-heap 
+ordered by `(time, priority)`. Event types are defined with explicit tie-breaking priority:
 
 - Departure → priority 0 (frees server before new arrivals compete)
 - Arrival / Transfer → priority 1
 
-This ordering ensures that a departure and an arrival at identical timestamps always resolve in the physically correct order, preventing artificial inflation of queue lengths and waiting times.
+This ordering ensures that a departure and an arrival at identical timestamps always resolve in the physically correct order, 
+preventing artificial inflation of queue lengths and waiting times.
 
-**Modularity.** Each `QueueModel` instance is self-contained with its own event handlers. Queues are connected via the `next_queue` parameter for multi-stage pipelines. The `Router` class implements the BPMN routing gateway, distributing a single Poisson stream across partitions by categorical weights.
+**Modularity.** Each `QueueModel` instance is self-contained with its own event handlers. Queues are connected via the `next_queue` 
+parameter for multi-stage pipelines. The `Router` class implements the BPMN routing gateway, distributing a single Poisson stream 
+across partitions by categorical weights.
 
-**Warm-up deletion.** The `reset_statistics()` method on `QueueModel` zeros all statistical counters without disturbing the model state (queue contents and busy servers are preserved). This mirrors GPSS World's `RESET` command, enabling clean separation of transient and steady-state data collection.
+**Warm-up deletion.** The `reset_statistics()` method on `QueueModel` zeros all statistical counters without disturbing the model 
+state (queue contents and busy servers are preserved). This mirrors GPSS World's `RESET` command, enabling clean separation of 
+transient and steady-state data collection.
 
 ### 6.2 M/M/1 and M/M/c Validation
 
 Before running the full HPC model, the engine was validated against closed-form M/M/1 theory (λ=1.5, μ=2.0, ρ=0.75, T=50,000h):
 
-| Metric | Theory | Simulated | Error |
-|--------|--------|-----------|-------|
-| W_q (h) | 1.500 | 1.479 | 1.37% |
-| L_q | 2.250 | 2.222 | 1.24% |
-| ρ | 0.750 | 0.748 | 0.27% |
+| Metric  | Theory | Simulated | Error |
+|---------|--------|-----------|-------|
+| W_q (h) | 1.500  | 1.479     | 1.37% |
+| L_q     | 2.250  | 2.222     | 1.24% |
+| ρ       | 0.750  | 0.748     | 0.27% |
 
 Little's Law check: L_q = λ · W_q → 2.222 ≈ 1.500 × 1.479 = 2.219 ✓ (0.1% discrepancy).
 
-The M/M/1 case validates the single-server path but does not exercise multi-server dispatch. Since all three partitions are multi-server (c = 16/64/32), the engine was additionally validated against the **Erlang-C** formula for an M/M/4 queue (λ=3.0, μ=1.0/server, ρ=0.75, T=80,000h):
+The M/M/1 case validates the single-server path but does not exercise multi-server dispatch. Since all three partitions are 
+multi-server (c = 16/64/32), the engine was additionally validated against the **Erlang-C** formula for an M/M/4 queue (λ=3.0, μ=1.0/server, ρ=0.75, T=80,000h):
 
 | Metric | Theory | Simulated | Error |
 |--------|--------|-----------|-------|
-| W_q | 0.5094 | 0.5079 | 0.30% |
-| ρ | 0.7500 | 0.7499 | 0.02% |
-| L_q | 1.5283 | 1.5247 | 0.23% |
+| W_q    | 0.5094 | 0.5079    | 0.30% |
+| ρ      | 0.7500 | 0.7499    | 0.02% |
+| L_q    | 1.5283 | 1.5247    | 0.23% |
 
-The multi-server logic agrees with Erlang-C to within 0.3%, confirming that server acquisition, queueing, and dispatch behave correctly for c > 1. Little's Law again holds (1.5247 ≈ 3.0 × 0.5079 = 1.5236).
+The multi-server logic agrees with Erlang-C to within 0.3%, confirming that server acquisition, queueing, and dispatch behave 
+correctly for c > 1. Little's Law again holds (1.5247 ≈ 3.0 × 0.5079 = 1.5236).
 
 ### 6.3 GPSS World Validation Model
 
-A parallel model was implemented in GPSS World (`gpss/hpc_validation_final.gps`) to provide independent cross-validation of the Python DES results, covering arrivals, walltime-based routing, multi-server service, and finite-capacity blocking. (A separate GPSS limitation — `SPLIT`'s inability to relocate existing entities — affects only the future aging extension and is noted in [Section 11.3](#113-open-items-for-the-aging-extension).)
+A parallel model was implemented in GPSS World (`gpss/hpc_validation_final.gps`) to provide independent cross-validation of the Python DES 
+results, covering arrivals, walltime-based routing, multi-server service, and finite-capacity blocking.
 
-**Service distribution.** Service times are drawn from GPSS World's `LogNormal` function, matching the Python DES's log-normal distribution with mean=2h, CV=1.5 (SD_01). GPSS World's `LogNormal(stream, Locate, Scale, Shape)` evaluates as `Locate + exp(Scale + Shape·Z)` — i.e. `Scale` is the *additive* location parameter μ of the underlying normal distribution, not `exp(μ)`. For mean=2h, CV=1.5: σ = √(ln(1+CV²)) = 1.085659 and μ = ln(2) − σ²/2 = 0.103820, giving `LogNormal(stream, 0, 0.103820, 1.085659)`. This was confirmed with a 100,000-sample self-test (`gpss/hpc_lognormal_selftest.gps`): observed MEAN=2.002, STD.DEV=2.997 (CV=1.497), against targets of 2.0 / 3.0 / 1.5.
+**Service distribution.** Service times are drawn from GPSS World's `LogNormal` function, matching the Python DES's log-normal distribution 
+with mean=2h, CV=1.5 (SD_01). GPSS World's `LogNormal(stream, Locate, Scale, Shape)` evaluates as `Locate + exp(Scale + Shape·Z)`— i.e. `Scale` 
+is the *additive* location parameter μ of the underlying normal distribution, not `exp(μ)`. For mean=2h, CV=1.5: σ = √(ln(1+CV²)) = 1.085659 
+and μ = ln(2) − σ²/2 = 0.103820, giving `LogNormal(stream, 0, 0.103820, 1.085659)`. This was confirmed with a 100,000-sample self-test (`gpss/hpc_lognormal_selftest.gps`): 
+observed MEAN=2.002, STD.DEV=2.997 (CV=1.497), against targets of 2.0 / 3.0 / 1.5.
 
-**Two-point cross-validation design.** Section 9.4 notes that at saturation, W_q is dominated by the congestion term `1/(1-ρ)` rather than the service-variability term `(1+C_s²)` — meaning a single saturated comparison point validates admission, routing, and capacity logic, but cannot distinguish between service distributions with different CVs. To make the comparison discriminating, this validation uses two operating points: a **saturated baseline** (λ=45, offered ρ_Standard≈1.13, matching Section 3's baseline) and a **high-subcritical** point (λ=38, offered ρ_Standard≈0.95) where CV materially affects W_q.
+**Two-point cross-validation design.** Section 9.4 notes that at saturation, W_q is dominated by the congestion term `1/(1-ρ)` rather than the 
+service-variability term `(1+C_s²)`, meaning a single saturated comparison point validates admission, routing, and capacity logic, but cannot 
+distinguish between service distributions with different CVs. To make the comparison discriminating, this validation uses two operating points: 
+a **saturated baseline** (λ=45, offered ρ_Standard≈1.13, matching Section 3's baseline) and a **high-subcritical** point (λ=38, offered ρ_Standard≈0.95) 
+where CV materially affects W_q.
 
-**Run procedure.** Each scenario uses a 500h warm-up followed by a 4000h collection window (matching the framework in Section 9.3), implemented as two single-shot timer transactions (`GENERATE ,,500,1` / `GENERATE ,,4500,1`). At the warm-up boundary, the `SARR`/`SBLK` blocking counters are explicitly zeroed so P_b reflects the collection window only. Each scenario was run for **5 independent replications**, reseeding all four RNG streams (1=arrivals/routing, 2/3/4=Short/Standard/Long service) via `RMULT` between reps. Raw per-replication results are in `gpss_xval_results.csv`.
+**Run procedure.** Each scenario uses a 500h warm-up followed by a 4000h collection window (matching the framework in Section 9.3), implemented 
+as two single-shot timer transactions (`GENERATE ,,500,1` / `GENERATE ,,4500,1`). At the warm-up boundary, the `SARR`/`SBLK` blocking counters 
+are explicitly zeroed so P_b reflects the collection window only. Each scenario was run for **5 independent replications**, reseeding all four RNG 
+streams (1=arrivals/routing, 2/3/4=Short/Standard/Long service) via `RMULT` between reps. Raw per-replication results are in `gpss/hpc_validation_results.csv`.
 
 **Results — saturated baseline (λ=45, offered ρ_Standard≈1.13):**
 
-| Metric | Python (log-normal) | GPSS (log-normal, n=5) |
-|--------|---------------------|------------------------|
-| W_q Standard (h) | 3.967 | 3.938 ± 0.026 |
-| W_q Short (h) | 0.001 | 0.000 |
-| W_q Long (h) | 0.000 | 0.000 |
-| ρ Standard | 0.998 | 0.9996 ± 0.0001 |
-| ρ Short | 0.283 | 0.279 ± 0.007 |
-| ρ Long | 0.424 | 0.422 ± 0.005 |
-| P_b Standard | 0.111 | 0.111 ± 0.005 |
+| Metric           | Python (log-normal) | GPSS (log-normal, n=5) |
+|------------------|---------------------|------------------------|
+| W_q Standard (h) | 3.967               | 3.938 ± 0.026          |
+| W_q Short (h)    | 0.001               | 0.000                  |
+| W_q Long (h)     | 0.000               | 0.000                  |
+| ρ Standard       | 0.998               | 0.9996 ± 0.0001        |
+| ρ Short          | 0.283               | 0.279 ± 0.007          |
+| ρ Long           | 0.424               | 0.422 ± 0.005          |
+| P_b Standard     | 0.111               | 0.111 ± 0.005          |
 
 **Results — high-subcritical (λ=38, offered ρ_Standard≈0.95):**
 
-| Metric | Reference (log-normal, n=20)\* | GPSS (log-normal, n=5) |
-|--------|--------------------------------|------------------------|
-| W_q Standard (h) | 0.482 ± 0.036 | 0.500 ± 0.159 |
-| ρ Standard | 0.949 ± 0.002 | 0.949 ± 0.006 |
-| ρ Short | 0.237 ± 0.002 | 0.233 ± 0.006 |
-| ρ Long | 0.357 ± 0.002 | 0.357 ± 0.002 |
-| P_b Standard | ~0.0002 | 0.0001 |
+| Metric           | Reference (log-normal, n=20)\* | GPSS (log-normal, n=5) |
+|------------------|--------------------------------|------------------------|
+| W_q Standard (h) | 0.482 ± 0.036                  | 0.500 ± 0.159          |
+| ρ Standard       | 0.949 ± 0.002                  | 0.949 ± 0.006          |
+| ρ Short          | 0.237 ± 0.002                  | 0.233 ± 0.006          |
+| ρ Long           | 0.357 ± 0.002                  | 0.357 ± 0.002          |
+| P_b Standard     | ~0.0002                        | 0.0001                 |
 
-\* From an independent reference re-implementation of the routed M/G/c/N system, used to derive target values and validate the run procedure before the GPSS runs; 95% CIs from 20 replications.
+From an independent reference re-implementation of the routed M/G/c/N system, used to derive target values and validate the run 
+procedure before the GPSS runs; 95% CIs from 20 replications.
 
-**Sensitivity to SD_01 (service-time CV).** Section 9.4 argues that SD_01's specific CV value (1.5) has little impact on the baseline conclusions because, at saturation, W_q is dominated by `1/(1-ρ)` rather than `(1+C_s²)`. This is checked directly with the same reference implementation run at CV≈0.71 (same mean): W_q Standard changes by only **−2%** at λ=45 (3.959h → 4.038h) but by **+77%** at λ=38 (0.272h → 0.482h) when CV is raised from 0.71 to 1.5. The high-subcritical point is therefore where SD_01's value actually matters, and is the point this validation is designed to exercise.
+**Sensitivity to SD_01 (service-time CV).** Section 9.4 argues that SD_01's specific CV value (1.5) has little impact on the baseline 
+conclusions because, at saturation, W_q is dominated by `1/(1-ρ)` rather than `(1+C_s²)`. This is checked directly with the same reference 
+implementation run at CV≈0.71 (same mean): W_q Standard changes by only **−2%** at λ=45 (3.959h → 4.038h) but by **+77%** at λ=38 (0.272h → 0.482h) 
+when CV is raised from 0.71 to 1.5. The high-subcritical point is therefore where SD_01's value actually matters, and is the point this validation 
+is designed to exercise.
 
 **Interpretation.**
 
 - At λ=45, GPSS agrees with the Python baseline to within 1.3% on every metric (W_q Standard: −0.7%).
-- At λ=38, GPSS's W_q Standard (0.500h, n=5) falls within its own 95% CI of the reference (0.482h, +3.7%). The ρ values, which depend only on the service-time *mean* and not its shape, agree to within 1.4% throughout.
-- Together with the sensitivity check above, the two points validate both the queueing mechanics (saturated point — admission, routing, capacity) and the service-time distribution itself (high-subcritical point — where the CV assumption in SD_01 actually drives the result).
+- At λ=38, GPSS's W_q Standard (0.500h, n=5) falls within its own 95% CI of the reference (0.482h, +3.7%). The ρ values, which depend 
+only on the service-time *mean* and not its shape, agree to within 1.4% throughout.
+- Together with the sensitivity check above, the two points validate both the queueing mechanics (saturated point — admission, routing, capacity) 
+and the service-time distribution itself (high-subcritical point — where the CV assumption in SD_01 actually drives the result).
 
 ### 6.4 Trace Validation
 
-The simulator supports a trace mode (`trace_limit=N`) that logs the first N events for manual verification. Below is the trace output for an M/M/1 queue (λ=1.5, μ=2.0, seed=42, first 30 events):
+The simulator supports a trace mode (`trace_limit=N`) that logs the first N events for manual verification. Below is the trace output for 
+an M/M/1 queue (λ=1.5, μ=2.0, seed=42, first 30 events):
 
 ```
   Step         Clock  Event Type          Entity  Calendar
@@ -279,9 +325,13 @@ The simulator supports a trace mode (`trace_limit=N`) that logs the first N even
 Verification points from the trace:
 
 - **Clock advances monotonically** — no time reversals, confirming the heap ordering is correct.
-- **Tie-breaking is respected** — at steps 14–15 an arrival at t=3.699069 is immediately followed by a departure at t=3.700978; the `(time, priority)` ordering guarantees that whenever an arrival and a departure share an identical timestamp, the departure fires first (priority 0 < 1), freeing a server before the new arrival competes for it.
-- **Calendar size oscillates between 0 and 1** — at step 0 and step 6 the calendar is empty (size 0), meaning the system drained all pending events before the next arrival. This is expected at ρ=0.75: the server is fast enough to occasionally clear the backlog completely.
-- **Arrival–departure alternation** — the pattern of arrivals and departures is consistent with ρ=0.75: arrivals slightly outnumber departures in bursts, then departures catch up, which is the characteristic steady-state oscillation of a subcritical queue.
+- **Tie-breaking is respected** — at steps 14–15 an arrival at t=3.699069 is immediately followed by a departure at t=3.700978; 
+the `(time, priority)` ordering guarantees that whenever an arrival and a departure share an identical timestamp, the departure fires 
+first (priority 0 < 1), freeing a server before the new arrival competes for it.
+- **Calendar size oscillates between 0 and 1** — at step 0 and step 6 the calendar is empty (size 0), meaning the system drained all 
+pending events before the next arrival. This is expected at ρ=0.75: the server is fast enough to occasionally clear the backlog completely.
+- **Arrival–departure alternation** — the pattern of arrivals and departures is consistent with ρ=0.75: arrivals slightly outnumber 
+departures in bursts, then departures catch up, which is the characteristic steady-state oscillation of a subcritical queue.
 
 ---
 
