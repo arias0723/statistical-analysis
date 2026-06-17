@@ -430,7 +430,42 @@ for main effects; signed cross-products for interactions), with a 95% CI half-wi
 | A×B×C                 | +0.0023      | +0.5113            |
 | **95% CI half-width** | **±0.0015**  | **±0.0252**        |
 
-Every effect's confidence interval excludes zero — even B×C and A×B×C, which the single-run design could not distinguish from noise. Four findings emerge:
+Every effect's confidence interval excludes zero — even B×C and A×B×C, which the single-run design could not distinguish from noise. 
+A factorial ANOVA reaches the same verdict as the contrast confidence intervals above (the CI and F tests are equivalent for a 2³ design: 
+a CI excluding zero corresponds to F > t² = 3.97). For each effect, SS = (N/4)·effect² with 1 df; the error term is the pooled within-cell variance (df = 72).
+
+**Table 8.3b — Factorial ANOVA, P_b Standard**
+
+| Source    | SS       | df | MS         | F      | p        |
+|-----------|----------|----|------------|--------|----------|
+| A (λ)     | 0.5739   | 1  | 0.5739     | 50,700 | <0.0001  |
+| B (w_Std) | 0.1264   | 1  | 0.1264     | 11,160 | <0.0001  |
+| C (c_Std) | 0.1448   | 1  | 0.1448     | 12,790 | <0.0001  |
+| A×B       | 0.1264   | 1  | 0.1264     | 11,160 | <0.0001  |
+| A×C       | 0.1448   | 1  | 0.1448     | 12,790 | <0.0001  |
+| B×C       | 0.000106 | 1  | 0.000106   | 9.34   | 0.0032   |
+| A×B×C     | 0.000106 | 1  | 0.000106   | 9.34   | 0.0032   |
+| Error     | 0.000815 | 72 | 1.13×10⁻⁵  |        |          |
+| Total     | 1.1174   | 79 |            |        |          |
+
+**Table 8.3c — Factorial ANOVA, W_q Standard (h)**
+
+| Source    | SS      | df | MS         | F      | p        |
+|-----------|---------|----|------------|--------|----------|
+| A (λ)     | 175.62  | 1  | 175.62     | 54,900 | <0.0001  |
+| B (w_Std) | 6.187   | 1  | 6.187      | 1,936  | <0.0001  |
+| C (c_Std) | 27.25   | 1  | 27.25      | 8,526  | <0.0001  |
+| A×B       | 6.156   | 1  | 6.156      | 1,926  | <0.0001  |
+| A×C       | 27.19   | 1  | 27.19      | 8,506  | <0.0001  |
+| B×C       | 5.200   | 1  | 5.200      | 1,627  | <0.0001  |
+| A×B×C     | 5.229   | 1  | 5.229      | 1,636  | <0.0001  |
+| Error     | 0.2301  | 72 | 3.196×10⁻³ |        |          |
+| Total     | 253.06  | 79 |            |        |          |
+
+Every effect is significant, consistent with the contrast CIs. The F-magnitudes should be read qualitatively rather than literally: 
+variance is strongly heterogeneous across cells — the four λ=30 cells block nothing and have zero variance, while the W_q error term is 
+dominated by the near-saturation cell (run 6) — and CRN induces cross-cell correlation, so the F-test's constant-variance and independence 
+assumptions are only approximately met. The conclusions therefore rest on the effect magnitudes and replication-based CIs, which the ANOVA corroborates.
 
 **Finding 1 — λ dominates, and at low λ nothing else matters.** At λ=30 (runs 1, 3, 5, 7), P_b_Standard = 0.000 ± 0.000 in *every* cell 
 regardless of w_Standard or c_Standard — the system has enough slack that the other two factors are invisible. This is why the A×B and A×C interaction 
