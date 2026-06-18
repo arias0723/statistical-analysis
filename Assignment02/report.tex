@@ -207,17 +207,17 @@ $T=4000$ h) produced the following metrics:
 \toprule
 \textbf{Partition} & $\boldsymbol{\rho}$ & $\boldsymbol{\Wq}$ \textbf{(h)} & $\boldsymbol{\Lq}$ & $\boldsymbol{\Pb}$ \\
 \midrule
-Short    & 0.283 & 0.001 &   0.00 & 0.000 \\
-Standard & 0.998 & 3.967 & 126.65 & 0.111 \\
-Long     & 0.424 & 0.000 &   0.00 & 0.000 \\
+Short    & 0.274 & 0.000 &   0.00 & 0.000 \\
+Standard & 0.999 & 3.918 & 125.64 & 0.105 \\
+Long     & 0.427 & 0.000 &   0.00 & 0.000 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 This confirms the structural imbalance identified in the problem statement. The aggregate offered load is
 $\rho_\text{total} = 0.804$, suggesting the system still has capacity, yet Standard alone operates at
-$\rho = 0.998$, effectively saturated. Short and Long combined hold 48 nodes ($\rho < 0.45$) while
-Standard's 64 nodes are never idle. The 11.1\% blocking probability in Standard means roughly 1 in 9
+$\rho = 0.999$, effectively saturated. Short and Long combined hold 48 nodes ($\rho < 0.45$) while
+Standard's 64 nodes are never idle. The 10.5\% blocking probability in Standard means roughly 1 in 10
 jobs is rejected outright.
 
 \begin{figure}[H]
@@ -303,17 +303,18 @@ The full HPC system is described by a five-lane BPMN diagram:
 \begin{table}[H]
 \centering
 \caption{Mapping between BPMN elements and simulation constructs}
-\begin{tabularx}{\linewidth}{L{2.8cm}cL{3.2cm}L{3.2cm}L{3cm}}
+\footnotesize
+\begin{tabularx}{\linewidth}{@{}L{2.3cm}c L{2.4cm} X X@{}}
 \toprule
 \textbf{BPMN element} & \textbf{Sym.} & \textbf{Simulation parameter} & \textbf{Python construct} & \textbf{GPSS construct} \\
 \midrule
-Start event (thin ring) & $\circ$  & $A = M(\lam)$, $\lam=45$ jobs/h      & \lstinline|exponential(45)|                    & \lstinline|GENERATE (Exponential(1,0,0.022222))| \\[4pt]
-XOR gateway (route)     & $\diamond$ & Routing weights [0.05, 0.80, 0.15] & \lstinline|Router._pick_partition()|           & \lstinline|TRANSFER .050 / .842| \\[4pt]
-XOR gateway (admit)     & $\diamond$ & Capacity check $N$                 & \lstinline|total_in_system >= self.capacity|   & \lstinline|TEST L (Q$+S$),N,BLOCKED| \\[4pt]
-Task (queue)            & $\square$ & $D=$ FIFO, $N \in \{50,200,100\}$  & \lstinline|self.queue = deque()|               & \lstinline|QUEUE / DEPART| \\[4pt]
-Task (execute)          & $\square$ & $S=G(\text{log-normal})$, $c \in \{16,64,32\}$ & \lstinline|self.service_dist()| & \lstinline|ENTER / ADVANCE / LEAVE| with \lstinline|STORAGE| \\[4pt]
-End event (blocked)     & $\odot$  & $\Pb =$ blocked/total              & \lstinline|entities_dropped|                   & \lstinline|SAVEVALUE SBLK+,1| \\[4pt]
-End event (done)        & $\odot$  & Job exits system                   & entity removed                                 & \lstinline|TERMINATE| \\
+Start event (thin ring) & $\circ$  & $A = M(\lam)$, $\lam=45$ jobs/h      & \texttt{exponential(45, rng)}                  & \texttt{GENERATE (Exponential(\allowbreak1,0,\allowbreak0.022222))} \\[3pt]
+XOR gateway (route)     & $\diamond$ & Routing weights [0.05, 0.80, 0.15] & \texttt{Router.\_pick\_partition()}            & \texttt{TRANSFER .050 / .842} \\[3pt]
+XOR gateway (admit)     & $\diamond$ & Capacity check $N$                 & \texttt{total\_in\_system >= self.capacity}    & \texttt{TEST L (Q\$+S\$),N,BLOCKED} \\[3pt]
+Task (queue)            & $\square$ & $D=$ FIFO, $N \in \{50,200,100\}$  & \texttt{self.queue = deque()}                  & \texttt{QUEUE / DEPART} \\[3pt]
+Task (execute)          & $\square$ & $S=G(\text{log-normal})$, $c \in \{16,64,32\}$ & \texttt{self.service\_dist()}      & \texttt{ENTER / ADVANCE / LEAVE} with \texttt{STORAGE} \\[3pt]
+End event (blocked)     & $\odot$  & $\Pb =$ blocked/total              & \texttt{entities\_dropped}                     & \texttt{SAVEVALUE SBLK+,1} \\[3pt]
+End event (done)        & $\odot$  & Job exits system                   & entity removed                                 & \texttt{TERMINATE} \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -342,7 +343,7 @@ The simulator is implemented in Python across five modules:
 \texttt{event.py}       & Event dataclass with \texttt{(time, priority)} ordering for tie-breaking \\
 \texttt{simulator.py}   & Central event calendar using \texttt{heapq}; advances clock by event; optional trace mode \\
 \texttt{queue\_model.py} & \texttt{QueueModel} class (single Kendall node) and \texttt{Router} class (BPMN gateway) \\
-\texttt{util.py}        & Distribution samplers: \texttt{exponential}, \texttt{deterministic}, \texttt{lognormal} \\
+\texttt{util.py}        & Custom \texttt{LCG} generator + distribution samplers (\texttt{exponential}, \texttt{lognormal}) \\
 \texttt{main.py}        & Entry point: M/M/1 validation and HPC cluster runs \\
 \bottomrule
 \end{tabularx}
@@ -381,15 +382,15 @@ Before running the full HPC model, the engine was validated against closed-form 
 \toprule
 \textbf{Metric} & \textbf{Theory} & \textbf{Simulated} & \textbf{Error} \\
 \midrule
-$\Wq$ (h) & 1.500 & 1.479 & 1.37\% \\
-$\Lq$     & 2.250 & 2.222 & 1.24\% \\
-$\rho$    & 0.750 & 0.748 & 0.27\% \\
+$\Wq$ (h) & 1.500 & 1.495 & 0.34\% \\
+$\Lq$     & 2.250 & 2.234 & 0.71\% \\
+$\rho$    & 0.750 & 0.749 & 0.12\% \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Little's Law check: $\Lq = \lam \cdot \Wq \;\to\; 2.222 \approx 1.500 \times 1.479 = 2.219$ \checkmark
-(0.1\% discrepancy).
+Little's Law check: $\Lq = \lam \cdot \Wq \;\to\; 2.234 \approx 1.500 \times 1.495 = 2.243$ \checkmark
+(0.4\% discrepancy).
 
 The M/M/1 case validates the single-server path but does not exercise multi-server dispatch. Since all
 three partitions are multi-server ($c = 16/64/32$), the engine was additionally validated against the
@@ -403,16 +404,16 @@ $T=80{,}000$ h):
 \toprule
 \textbf{Metric} & \textbf{Theory} & \textbf{Simulated} & \textbf{Error} \\
 \midrule
-$\Wq$  & 0.5094 & 0.5079 & 0.30\% \\
-$\rho$ & 0.7500 & 0.7499 & 0.02\% \\
-$\Lq$  & 1.5283 & 1.5247 & 0.23\% \\
+$\Wq$  & 0.5094 & 0.5050 & 0.87\% \\
+$\rho$ & 0.7500 & 0.7481 & 0.25\% \\
+$\Lq$  & 1.5283 & 1.5140 & 0.93\% \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-The multi-server logic agrees with Erlang-C to within 0.3\%, confirming that server acquisition,
+The multi-server logic agrees with Erlang-C to within 0.9\%, confirming that server acquisition,
 queueing, and dispatch behave correctly for $c > 1$. Little's Law again holds
-($1.5247 \approx 3.0 \times 0.5079 = 1.5236$).
+($1.5140 \approx 3.0 \times 0.5050 = 1.5150$).
 
 \subsection{GPSS World Validation Model}
 
@@ -447,15 +448,15 @@ replications}, reseeding all four RNG streams via \texttt{RMULT} between reps.
 \caption{GPSS cross-validation: saturated baseline ($\lam=45$)}
 \begin{tabular}{lcc}
 \toprule
-\textbf{Metric} & \textbf{Python (log-normal)} & \textbf{GPSS (log-normal, $n=5$)} \\
+\textbf{Metric} & \textbf{Python (LCG, log-normal)} & \textbf{GPSS (log-normal, $n=5$)} \\
 \midrule
-$\Wq$ Standard (h) & 3.967 & $3.938 \pm 0.026$ \\
-$\Wq$ Short (h)    & 0.001 & 0.000             \\
+$\Wq$ Standard (h) & 3.918 & $3.938 \pm 0.026$ \\
+$\Wq$ Short (h)    & 0.000 & 0.000             \\
 $\Wq$ Long (h)     & 0.000 & 0.000             \\
-$\rho$ Standard    & 0.998 & $0.9996 \pm 0.0001$ \\
-$\rho$ Short       & 0.283 & $0.279 \pm 0.007$   \\
-$\rho$ Long        & 0.424 & $0.422 \pm 0.005$   \\
-$\Pb$ Standard     & 0.111 & $0.111 \pm 0.005$   \\
+$\rho$ Standard    & 0.999 & $0.9996 \pm 0.0001$ \\
+$\rho$ Short       & 0.274 & $0.279 \pm 0.007$   \\
+$\rho$ Long        & 0.427 & $0.422 \pm 0.005$   \\
+$\Pb$ Standard     & 0.105 & $0.111 \pm 0.005$   \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -484,8 +485,10 @@ ${\approx}0.71$ changes $\Wq$ Standard by only $-2\%$; at the high-subcritical p
 the same change alters $\Wq$ Standard by $+77\%$. The high-subcritical point is therefore where SD\_01's
 value actually matters, and is the point this validation is designed to exercise.
 
-\textbf{Interpretation.} At $\lam=45$, GPSS agrees with the Python baseline to within 1.3\% on every
-metric. At $\lam=38$, GPSS's $\Wq$ Standard (0.500 h, $n=5$) falls within its own 95\% CI of the
+\textbf{Interpretation.} At $\lam=45$, GPSS and the Python (LCG) baseline agree to within ${\sim}0.5\%$
+on $\Wq$ Standard (3.918 vs 3.938) and to $<0.1\%$ on $\rho$ Standard; $\rho$ Short and $\rho$ Long agree
+to within ${\sim}1.8\%$, and $\Pb$ Standard (Python 0.105 vs GPSS $0.111 \pm 0.005$) falls within the
+GPSS 95\% CI. At $\lam=38$, GPSS's $\Wq$ Standard (0.500 h, $n=5$) falls within its own 95\% CI of the
 reference (0.482 h, $+3.7\%$). Together, the two points validate both the queueing mechanics and the
 service-time distribution.
 
@@ -653,26 +656,27 @@ all main effects and interactions without confounding.
 \begin{table}[H]
 \centering
 \caption{DOE results — all 8 runs (mean $\pm$ 95\% CI, $n=10$)}
-\small
+\resizebox{\textwidth}{!}{%
 \begin{tabular}{cccccccccccc}
 \toprule
 \textbf{Run} & $\boldsymbol{\lam}$ & $\boldsymbol{w_\text{Std}}$ & $\boldsymbol{c_\text{Std}}$ &
-$\boldsymbol{\rho_\text{Std}}$ &
+\textbf{off.}\,$\boldsymbol{\rho_\text{Std}}$ &
 $\boldsymbol{W_{q,\text{Std}}}$ & $\boldsymbol{\rho_\text{Std}}$ &
 $\boldsymbol{P_{b,\text{Std}}}$ &
 $\boldsymbol{W_{q,\text{Sh}}}$ & $\boldsymbol{P_{b,\text{Sh}}}$ &
 $\boldsymbol{W_{q,\text{Lo}}}$ & $\boldsymbol{P_{b,\text{Lo}}}$ \\
 \midrule
-1 & 30 & 0.65 & 64 & 0.609 & 0.000 & $0.608{\pm}0.004$ & 0.000 & 0.000 & 0.000 & 0.000 & 0.000 \\
-2 & 60 & 0.65 & 64 & 1.219 & $4.086{\pm}0.020$ & 1.000 & $0.177{\pm}0.004$ & $0.038{\pm}0.004$ & 0.000 & $1.584{\pm}0.107$ & $0.011{\pm}0.002$ \\
-3 & 30 & 0.80 & 64 & 0.750 & $0.003{\pm}0.001$ & $0.748{\pm}0.005$ & 0.000 & 0.000 & 0.000 & 0.000 & 0.000 \\
-4 & 60 & 0.80 & 64 & 1.500 & $4.175{\pm}0.017$ & 1.000 & $0.332{\pm}0.003$ & 0.000 & 0.000 & 0.000 & 0.000 \\
-5 & 30 & 0.65 & 80 & 0.487 & 0.000 & $0.487{\pm}0.003$ & 0.000 & 0.000 & 0.000 & 0.000 & 0.000 \\
-6 & 60 & 0.65 & 80 & 0.975 & $0.731{\pm}0.110$ & $0.971{\pm}0.004$ & $0.003{\pm}0.001$ & $0.038{\pm}0.004$ & 0.000 & $1.584{\pm}0.107$ & $0.011{\pm}0.002$ \\
+1 & 30 & 0.65 & 64 & 0.609 & 0.000 & $0.607{\pm}0.004$ & 0.000 & 0.000 & 0.000 & 0.000 & 0.000 \\
+2 & 60 & 0.65 & 64 & 1.219 & $4.091{\pm}0.023$ & 1.000 & $0.178{\pm}0.004$ & $0.039{\pm}0.004$ & 0.000 & $1.673{\pm}0.145$ & $0.013{\pm}0.002$ \\
+3 & 30 & 0.80 & 64 & 0.750 & $0.002{\pm}0.001$ & $0.747{\pm}0.004$ & 0.000 & 0.000 & 0.000 & 0.000 & 0.000 \\
+4 & 60 & 0.80 & 64 & 1.500 & $4.182{\pm}0.018$ & 1.000 & $0.332{\pm}0.003$ & 0.000 & 0.000 & 0.000 & 0.000 \\
+5 & 30 & 0.65 & 80 & 0.487 & 0.000 & $0.485{\pm}0.003$ & 0.000 & 0.000 & 0.000 & 0.000 & 0.000 \\
+6 & 60 & 0.65 & 80 & 0.975 & $0.726{\pm}0.099$ & $0.972{\pm}0.003$ & $0.003{\pm}0.001$ & $0.039{\pm}0.004$ & 0.000 & $1.673{\pm}0.145$ & $0.013{\pm}0.002$ \\
 7 & 30 & 0.80 & 80 & 0.600 & 0.000 & $0.598{\pm}0.004$ & 0.000 & 0.000 & 0.000 & 0.000 & 0.000 \\
-8 & 60 & 0.80 & 80 & 1.200 & $2.864{\pm}0.015$ & 1.000 & $0.166{\pm}0.004$ & 0.000 & 0.000 & 0.000 & 0.000 \\
+8 & 60 & 0.80 & 80 & 1.200 & $2.869{\pm}0.013$ & 1.000 & $0.166{\pm}0.003$ & 0.000 & 0.000 & 0.000 & 0.000 \\
 \bottomrule
-\end{tabular}
+\end{tabular}%
+}
 \end{table}
 
 \begin{figure}[H]
@@ -687,7 +691,7 @@ Key observations:
   server count (Finding~1).
   \item $\lam=60$ Standard blocking is severe at the current configuration (run~4: 0.332), drops to 0.166
   with more servers (run~8), and collapses to 0.003 in run~6 ($w=0.65$, $c=80$) — the recommended cell.
-  \item Long blocking appears only in runs~2 and~6 (both 0.011) — the redistribution runs where weight
+  \item Long blocking appears only in runs~2 and~6 (both 0.013) — the redistribution runs where weight
   shifts off Standard onto Long (Finding~3, identical under CRN).
 \end{itemize}
 
@@ -704,15 +708,15 @@ half-width from the pooled within-cell variance across $R=10$ replications (df$=
 \toprule
 \textbf{Effect} & $\boldsymbol{\Pb}$ \textbf{Standard} & $\boldsymbol{\Wq}$ \textbf{Standard (h)} \\
 \midrule
-A --- $\lam$          & $+0.1694$ & $+2.9633$ \\
-B --- $w_\text{Std}$  & $+0.0795$ & $+0.5562$ \\
-C --- $c_\text{Std}$  & $-0.0851$ & $-1.1673$ \\
-A$\times$B            & $+0.0795$ & $+0.5548$ \\
-A$\times$C            & $-0.0851$ & $-1.1659$ \\
-B$\times$C            & $+0.0023$ & $+0.5099$ \\
-A$\times$B$\times$C   & $+0.0023$ & $+0.5113$ \\
+A --- $\lam$          & $+0.1698$ & $+2.9664$ \\
+B --- $w_\text{Std}$  & $+0.0796$ & $+0.5591$ \\
+C --- $c_\text{Std}$  & $-0.0852$ & $-1.1700$ \\
+A$\times$B            & $+0.0796$ & $+0.5580$ \\
+A$\times$C            & $-0.0852$ & $-1.1689$ \\
+B$\times$C            & $+0.0023$ & $+0.5123$ \\
+A$\times$B$\times$C   & $+0.0023$ & $+0.5135$ \\
 \midrule
-\textbf{95\% CI half-width} & $\pm 0.0015$ & $\pm 0.0252$ \\
+\textbf{95\% CI half-width} & $\pm 0.0014$ & $\pm 0.0229$ \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -732,15 +736,15 @@ within-cell variance (df$=72$).
 \toprule
 \textbf{Source} & \textbf{SS} & \textbf{df} & \textbf{MS} & \textbf{F} & \textbf{$p$} \\
 \midrule
-A ($\lam$)          & 0.5739   & 1 & 0.5739     & 50{,}700 & $<0.0001$ \\
-B ($w_\text{Std}$)  & 0.1264   & 1 & 0.1264     & 11{,}160 & $<0.0001$ \\
-C ($c_\text{Std}$)  & 0.1448   & 1 & 0.1448     & 12{,}790 & $<0.0001$ \\
-A$\times$B          & 0.1264   & 1 & 0.1264     & 11{,}160 & $<0.0001$ \\
-A$\times$C          & 0.1448   & 1 & 0.1448     & 12{,}790 & $<0.0001$ \\
-B$\times$C          & 0.000106 & 1 & 0.000106   & 9.34     & $0.0032$  \\
-A$\times$B$\times$C & 0.000106 & 1 & 0.000106   & 9.34     & $0.0032$  \\
-Error               & 0.000815 & 72 & $1.13\times10^{-5}$ & & \\
-Total               & 1.1174   & 79 &            &          & \\
+A ($\lam$)          & 0.5766   & 1 & 0.5766     & 60{,}170 & $<0.0001$ \\
+B ($w_\text{Std}$)  & 0.1266   & 1 & 0.1266     & 13{,}210 & $<0.0001$ \\
+C ($c_\text{Std}$)  & 0.1453   & 1 & 0.1453     & 15{,}160 & $<0.0001$ \\
+A$\times$B          & 0.1266   & 1 & 0.1266     & 13{,}210 & $<0.0001$ \\
+A$\times$C          & 0.1453   & 1 & 0.1453     & 15{,}160 & $<0.0001$ \\
+B$\times$C          & 0.000106 & 1 & 0.000106   & 11.0     & $0.0015$  \\
+A$\times$B$\times$C & 0.000106 & 1 & 0.000106   & 11.0     & $0.0015$  \\
+Error               & 0.000690 & 72 & $9.58\times10^{-6}$ & & \\
+Total               & 1.1212   & 79 &            &          & \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -752,15 +756,15 @@ Total               & 1.1174   & 79 &            &          & \\
 \toprule
 \textbf{Source} & \textbf{SS} & \textbf{df} & \textbf{MS} & \textbf{F} & \textbf{$p$} \\
 \midrule
-A ($\lam$)          & 175.62 & 1 & 175.62 & 54{,}900 & $<0.0001$ \\
-B ($w_\text{Std}$)  & 6.187  & 1 & 6.187  & 1{,}936  & $<0.0001$ \\
-C ($c_\text{Std}$)  & 27.25  & 1 & 27.25  & 8{,}526  & $<0.0001$ \\
-A$\times$B          & 6.156  & 1 & 6.156  & 1{,}926  & $<0.0001$ \\
-A$\times$C          & 27.19  & 1 & 27.19  & 8{,}506  & $<0.0001$ \\
-B$\times$C          & 5.200  & 1 & 5.200  & 1{,}627  & $<0.0001$ \\
-A$\times$B$\times$C & 5.229  & 1 & 5.229  & 1{,}636  & $<0.0001$ \\
-Error               & 0.2301 & 72 & $3.196\times10^{-3}$ & & \\
-Total               & 253.06 & 79 &        &          & \\
+A ($\lam$)          & 175.99 & 1 & 175.99 & 66{,}660 & $<0.0001$ \\
+B ($w_\text{Std}$)  & 6.253  & 1 & 6.253  & 2{,}369  & $<0.0001$ \\
+C ($c_\text{Std}$)  & 27.380 & 1 & 27.380 & 10{,}370 & $<0.0001$ \\
+A$\times$B          & 6.227  & 1 & 6.227  & 2{,}359  & $<0.0001$ \\
+A$\times$C          & 27.325 & 1 & 27.325 & 10{,}350 & $<0.0001$ \\
+B$\times$C          & 5.250  & 1 & 5.250  & 1{,}989  & $<0.0001$ \\
+A$\times$B$\times$C & 5.274  & 1 & 5.274  & 1{,}998  & $<0.0001$ \\
+Error               & 0.1901 & 72 & $2.640\times10^{-3}$ & & \\
+Total               & 253.89 & 79 &        &          & \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -782,13 +786,13 @@ server-allocation tuning only matters under high load.}
 \textbf{Finding 2 --- $c_\text{Standard}$ has a larger effect than $w_\text{Standard}$, but they point
 the same direction.}
 Comparing run~4 ($\lam=60$, $w=0.80$, $c=64$: $\Pb=0.332 \pm 0.003$, worst cell) against run~6
-($\lam=60$, $w=0.65$, $c=80$: $\Pb=0.0025 \pm 0.0011$, best cell) shows a 99.2\% reduction ---
+($\lam=60$, $w=0.65$, $c=80$: $\Pb=0.003 \pm 0.001$, best cell) shows a 99.2\% reduction ---
 far larger than either factor's main effect alone, confirming the multiplicative relationship
 motivating this design.
 
 \textbf{Finding 3 --- the bottleneck shifts to Long under redistribution at high $\lam$, and CRN shows
 this cleanly.}
-Runs~2 and~6 both show $P_{b,\text{Long}} = 0.011 \pm 0.002$ and $W_{q,\text{Long}} = 1.584 \pm 0.107$ h
+Runs~2 and~6 both show $P_{b,\text{Long}} = 0.013 \pm 0.002$ and $W_{q,\text{Long}} = 1.673 \pm 0.145$ h
 --- identical to three decimal places under CRN, since Long's offered load depends only on $\lam$ and
 $w_\text{Standard}$, not on $c_\text{Standard}$. Relieving Standard by redistributing traffic does
 not eliminate congestion, it relocates it. Even so, total blocking in run~6 is dramatically lower than
@@ -797,15 +801,15 @@ in run~4.
 \textbf{Finding 4 --- B$\times$C is negligible for $P_{b,\text{Standard}}$ but not for $W_{q,\text{Standard}}$.}
 For $P_{b,\text{Standard}}$, B$\times$C $= +0.0023$ is statistically real but practically small
 (${\sim}3\%$ of either main effect), so the two levers are close to additive for blocking probability.
-For $W_{q,\text{Standard}}$, however, B$\times$C $= +0.510$ h $\pm$ 0.025 h is comparable to B's main
-effect ($+0.556$ h) and roughly 44\% of C's main effect ($-1.167$ h). A configuration tuned for
+For $W_{q,\text{Standard}}$, however, B$\times$C $= +0.512$ h $\pm$ 0.023 h is comparable to B's main
+effect ($+0.559$ h) and roughly 44\% of C's main effect ($-1.170$ h). A configuration tuned for
 blocking probability is \emph{not} automatically tuned for waiting time.
 
 \subsection{Recommended Configuration and Follow-up}
 
 Under high load ($\lam \approx 60$), the $(B^-, C^+)$ cell --- $w_\text{Standard}=0.65$,
 $c_\text{Standard}=80$ --- minimises total system blocking, taking $P_{b,\text{Standard}}$ from
-$0.332 \pm 0.003$ (run~4) to $0.0025 \pm 0.0011$ (run~6), a 99.2\% reduction. Given the asymmetric
+$0.332 \pm 0.003$ (run~4) to $0.003 \pm 0.001$ (run~6), a 99.2\% reduction. Given the asymmetric
 cost (B is free, C requires hardware), the recommended next step is a \textbf{one-dimensional sweep of
 $w_\text{Standard}$} at $c_\text{Standard}=80$ across $\lam \in \{45, 60\}$ to locate the
 redistribution ratio that does not merely relocate the bottleneck to Long. This is the first step of a
@@ -819,25 +823,25 @@ The assignment specifies five validation methods; each is addressed in its own s
 \subsection{Verify the Main Simulation Algorithm Implementation}
 
 \textbf{Theoretical comparison.} The engine is validated against closed-form M/M/1 (single-server) and
-M/M/4 Erlang-C (multi-server) theory (Section~6.2). All metrics agree within 1.4\% (M/M/1) and 0.3\%
-(M/M/4). Little's Law holds to within 0.1\% in both cases.
+M/M/4 Erlang-C (multi-server) theory (Section~6.2). All metrics agree within 0.7\% (M/M/1) and 0.9\%
+(M/M/4). Little's Law holds to within 0.4\% in both cases.
 
 \textbf{Trace inspection.} The trace log (Section~6.4) confirms monotonic clock advancement, correct
 tie-breaking priority, and queue dynamics consistent with $\rho=0.75$.
 
 \subsection{Verify the RNG Implementation and Validate its Parametrization}
 
-A five-test battery (Frequency/KS, Gap, Order, Runs, Serial) was run on both the LCG specified by the
-assignment and on Python's Mersenne Twister, the generator behind \texttt{util.exponential()} and
-\texttt{util.lognormal()} used throughout the simulation. Both generators pass all five tests at
-$\alpha=0.05$ (full results in Annex~A). The Mersenne Twister result is the one that matters for
-trusting Sections~6--8.
+A five-test battery (Frequency/KS, Gap, Order, Runs, Serial) was run on the custom LCG
+($m=2^{31}$, $a=1103515245$, $c=12345$) --- the generator behind \texttt{util.exponential()} and
+\texttt{util.lognormal()} used throughout the simulation --- and, for comparison, on Python's Mersenne
+Twister. Both generators pass all five tests at $\alpha=0.05$ (full results in Annex~A). The LCG result
+is the one that matters for trusting Sections~6--8.
 
 \subsection{Validate the Experimental Framework}
 
 The experimental framework is validated via warm-up analysis: the M/M/1 model was run at
-$T=5{,}000$ h (8.9\% error vs theory) and $T=50{,}000$ h (1.37\% error), with the error reduction
-proportional to $1/T$ as classical theory predicts. The \texttt{reset\_statistics()} method implements
+$T=5{,}000$ h (12.7\% error vs theory) and $T=50{,}000$ h (0.34\% error) --- the error falls steeply as
+the run lengthens and the transient is amortised over a longer collection window. The \texttt{reset\_statistics()} method implements
 warm-up deletion (matching GPSS World's \texttt{RESET}), used in the GPSS validation (500 h warm-up
 $+$ 4000 h collection). The DOE (Section~\ref{sec:doe}) reuses this same framework with $R=10$
 replications per cell and per-partition RNG streams seeded by replication index only.
@@ -856,8 +860,9 @@ saturation-dependence the argument predicts.
 \subsection{Validate the Results}
 
 The Python DES results are validated against an independent GPSS World implementation of the same
-system (Section~6.3), run at two operating points across 5 replications each. At $\lam=45$, all seven
-response metrics agree within 1.3\%. At $\lam=38$, GPSS's $\Wq$ Standard falls within its 95\% CI of
+system (Section~6.3), run at two operating points across 5 replications each. At $\lam=45$, the $\Wq$
+and $\rho$ metrics agree within ${\sim}1.8\%$ and $\Pb$ Standard (0.105 vs $0.111 \pm 0.005$) falls
+within the GPSS 95\% CI. At $\lam=38$, GPSS's $\Wq$ Standard falls within its 95\% CI of
 an independent reference implementation. Together with the CV-sensitivity check, the two points validate
 both the queueing mechanics and the service-time distribution.
 
@@ -866,24 +871,24 @@ both the queueing mechanics and the service-time distribution.
 
 \textbf{The cluster's reported delays are a symptom of a structural imbalance, not a capacity shortfall.}
 At the baseline configuration ($\lam=45$, weights 0.05/0.80/0.15, $c=16/64/32$), aggregate offered
-load is $\rho_\text{total}=0.804$, yet the Standard partition alone runs at $\rho=0.998$ with
-$\Wq=3.97$ h and $\Pb=0.111$, while Short and Long sit at $\rho=0.28$ and 0.42.
+load is $\rho_\text{total}=0.804$, yet the Standard partition alone runs at $\rho=0.999$ with
+$\Wq=3.92$ h and $\Pb=0.105$, while Short and Long sit at $\rho=0.27$ and 0.43.
 
 \textbf{The DOE confirms the imbalance is correctable through configuration, with two levers acting
 jointly.} The 2\textsuperscript{3} factorial ($R=10$ replications with CRN) shows that at low load
 ($\lam=30$) routing weight and server allocation have no measurable effect. Under overload ($\lam=60$),
-the two levers combine to take $P_{b,\text{Standard}}$ from $0.332 \pm 0.003$ to $0.0025 \pm 0.0011$
+the two levers combine to take $P_{b,\text{Standard}}$ from $0.332 \pm 0.003$ to $0.003 \pm 0.001$
 (a 99.2\% reduction). The two levers are close to additive for $P_{b,\text{Standard}}$ but not for
 $W_{q,\text{Standard}}$, where their interaction ($+0.51$ h) is comparable to either main effect.
 
 \textbf{No configuration eliminates congestion, it relocates it.} The best DOE cell (run~6) trades
-Standard's blocking for $P_{b,\text{Long}} = 0.011 \pm 0.002$, identical between runs~2 and~6 under CRN.
+Standard's blocking for $P_{b,\text{Long}} = 0.013 \pm 0.002$, identical between runs~2 and~6 under CRN.
 
 \textbf{The simulation engine is independently validated across three methods.} M/M/1 and M/M/4
-(Erlang-C) closed-form theory agree with the Python DES to within 1.4\% (Section~6.2), and an
-independent GPSS World model agrees to within 1.3\% at the saturated baseline and falls within its
-confidence interval at a high-subcritical load. Little's Law holds to within 0.1\% in the closed-form
-validation cases.
+(Erlang-C) closed-form theory agree with the Python DES to within 0.9\% (Section~6.2), and an
+independent GPSS World model agrees to within ${\sim}1.8\%$ at the saturated baseline ($\Pb$ Standard
+within its 95\% CI) and falls within its confidence interval at a high-subcritical load. Little's Law
+holds to within 0.4\% in the closed-form validation cases.
 
 \textbf{Recommendations}, in order of cost:
 \begin{enumerate}
@@ -892,7 +897,7 @@ validation cases.
   \item \textbf{Low-cost:} reallocate 16 nodes to Standard, which the DOE shows compounds with weight
   rebalancing to a 99.2\% reduction in $P_{b,\text{Standard}}$ under overload.
   \item \textbf{No-cost, complementary:} enable aging-based priority promotion at $t_\text{age} \approx
-  1.5$ h, which independently cut blocking by 96\% in the preliminary sweep (Section~\ref{sec:further}).
+  1.5$--$2$ h, which independently cut blocking by ${\sim}96\%$ in the preliminary sweep (Section~\ref{sec:further}).
   \item \textbf{Data-driven, long-term:} instrument the cluster to capture actual vs declared walltime,
   replacing the assumed routing weights and log-normal service parameters with empirical distributions.
 \end{enumerate}
@@ -945,12 +950,12 @@ six values (all other parameters at baseline):
 \toprule
 $\boldsymbol{t_\text{age}}$ \textbf{(h)} & \textbf{Std} $\boldsymbol{\Wq}$ \textbf{(h)} & \textbf{Short} $\boldsymbol{\Wq}$ \textbf{(h)} & \textbf{Promotions} & \textbf{Total blocked} \\
 \midrule
-6.0          & 3.967 & 0.001 &      2 & 15{,}958 \\
-3.0          & 2.708 & 3.212 & 14{,}950 &    676 \\
-2.0          & 1.700 & 2.891 & 16{,}045 &    775 \\
-\textbf{1.5} & \textbf{1.222} & \textbf{2.382} & \textbf{15{,}295} & \textbf{633} \\
-1.0          & 0.719 & 2.185 & 15{,}271 &    813 \\
-0.5          & 0.288 & 1.718 & 16{,}663 &    704 \\
+6.0          & 3.918 & 0.000 &      0 & 15{,}046 \\
+3.0          & 2.679 & 3.334 & 15{,}003 &    654 \\
+\textbf{2.0} & \textbf{1.705} & \textbf{2.721} & \textbf{15{,}132} & \textbf{618} \\
+1.5          & 1.212 & 2.419 & 15{,}182 &    656 \\
+1.0          & 0.729 & 2.164 & 15{,}410 &    687 \\
+0.5          & 0.288 & 1.852 & 16{,}343 &    711 \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -963,13 +968,15 @@ $\boldsymbol{t_\text{age}}$ \textbf{(h)} & \textbf{Std} $\boldsymbol{\Wq}$ \text
 
 Three observations motivate this as future work:
 \begin{enumerate}
-  \item \textbf{A high threshold is inert} --- at $t_\text{age}=6$ h only 2 promotions fire; at
-  $\rho=0.998$ jobs complete or are blocked before the timer elapses.
+  \item \textbf{A high threshold is inert} --- at $t_\text{age}=6$ h no promotions fire; at
+  $\rho=0.999$ jobs complete or are blocked before the timer elapses (the row reproduces the no-aging
+  baseline of Section~3.1).
   \item \textbf{Promotion redistributes congestion} --- lowering $t_\text{age}$ cuts Standard $\Wq$
-  but loads Short (its $\Wq$ reaches 1.72 h at $t_\text{age}=0.5$ h). The bottleneck shifts rather
+  but loads Short (its $\Wq$ reaches 1.85 h at $t_\text{age}=0.5$ h). The bottleneck shifts rather
   than disappearing.
-  \item \textbf{$t_\text{age}=1.5$ h minimises total blocking} --- blocking falls from 15{,}958 to 633
-  (${\sim}96\%$) through scheduler configuration alone.
+  \item \textbf{Total blocking is minimised around $t_\text{age}\approx1.5$--$2$ h} --- blocking falls
+  from 15{,}046 to ${\sim}620$ (${\sim}96\%$) through scheduler configuration alone; the precise
+  optimum within that range sits inside single-replication noise.
 \end{enumerate}
 
 % ══════════════════════════════════════════════════════════════════════════════
@@ -977,9 +984,10 @@ Three observations motivate this as future work:
 
 \section{RNG Validation}
 
-\textbf{Python's Mersenne Twister} (\texttt{random.random()}), the actual generator behind
+\textbf{The custom LCG} ($m=2^{31}$, $a=1103515245$, $c=12345$) is the actual generator behind
 \texttt{util.exponential()} and \texttt{util.lognormal()} used throughout the Python DES
-(Sections~6--8).
+(Sections~6--8); the samplers draw from \texttt{util.LCG} via inverse-CDF (exponential) and
+Box--Muller (log-normal) transforms. Python's Mersenne Twister is included only as a reference comparison.
 
 \begin{table}[H]
 \centering
@@ -1015,9 +1023,11 @@ E. Serial    & 0.00035 & 0.972 & RANDOM & 0.00440 & 0.660 & RANDOM \\
 \end{tabular}
 \end{table}
 
-Both generators pass all five tests at $\alpha=0.05$. The Mersenne Twister results back the simulation's
-validity: MT passes with comparable or better p-values across the board. Reproducibility: the full
-battery implementation is in \texttt{rng\_validation.py}.
+Both generators pass all five tests at $\alpha=0.05$. The LCG results back the simulation's validity,
+since \texttt{util.exponential()} and \texttt{util.lognormal()} sample from the LCG via inverse-CDF /
+Box--Muller transforms; the Mersenne Twister column is shown as a reference and passes equally well
+(comparable or higher p-values). Reproducibility: the full battery implementation is in
+\texttt{rng\_validation.py}.
 
 \section{GPSS Model Source}
 
