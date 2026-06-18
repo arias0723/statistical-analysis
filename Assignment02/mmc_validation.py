@@ -1,11 +1,7 @@
-import sys
-sys.path.insert(0, '/mnt/user-data/outputs')
+import math
 from simulator import Simulator
 from queue_model import QueueModel
-import random, math
-
-def exponential(rate):
-    return lambda: random.expovariate(rate)
+from util import LCG, exponential
 
 def erlang_c_wq(lam, mu, c):
     """Theoretical mean wait in queue for M/M/c (Erlang-C formula).
@@ -24,11 +20,12 @@ def erlang_c_wq(lam, mu, c):
     return {"rho": rho, "p_wait": p_wait, "wq": wq}
 
 def run_mmc(lam, mu, c, until=80000.0, seed=42):
-    random.seed(seed)
     sim = Simulator()
+    rng_arr = LCG(seed=seed)
+    rng_svc = LCG(seed=seed + 1)
     q = QueueModel(sim=sim, name=f"M/M/{c}",
-                   arrival_dist=exponential(lam),
-                   service_dist=exponential(mu),
+                   arrival_dist=exponential(lam, rng_arr),
+                   service_dist=exponential(mu, rng_svc),
                    servers=c, capacity=float('inf'), discipline='FIFO')
     q.start_generator()
     sim.run(until=until)

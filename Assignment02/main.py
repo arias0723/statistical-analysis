@@ -62,22 +62,33 @@ def run_hpc_cluster(arrival_lambda: float = 45.0,
     random.seed(seed)
     sim = Simulator()
 
+    # Custom-LCG streams (report Annex A) — the simulation's source of
+    # randomness, replacing Python's Mersenne Twister. Stream 1 = arrivals +
+    # routing; streams 2/3/4 = Short/Standard/Long service.
+    rng_arr = LCG(seed=seed)
+    rng_short = LCG(seed=seed + 1)
+    rng_std = LCG(seed=seed + 2)
+    rng_long = LCG(seed=seed + 3)
+
     # Per-partition service distribution (G = log-normal, report SD_01).
-    # SD_01 pins mean=2h, cv=1.5; we use a common service law across partitions
-    # so the load imbalance is driven purely by routing weights vs (c, N).
-    svc = lambda: lognormal(service_mean_h, service_cv)
+    # SD_01 pins mean=2h, cv=1.5; the same service law is used across
+    # partitions (so the load imbalance is driven purely by routing weights
+    # vs (c, N)), with each partition drawing from its own LCG stream.
 
     # Partitions: Short / Standard / Long  (report §2.1).
     # Created Short-first so the higher partitions can reference promote_to.
-    short = QueueModel(sim, "Short", arrival_dist=None, service_dist=svc(),
+    short = QueueModel(sim, "Short", arrival_dist=None,
+                       service_dist=lognormal(service_mean_h, service_cv, rng_short),
                        servers=16, capacity=50, discipline='FIFO')
 
-    standard = QueueModel(sim, "Standard", arrival_dist=None, service_dist=svc(),
+    standard = QueueModel(sim, "Standard", arrival_dist=None,
+                          service_dist=lognormal(service_mean_h, service_cv, rng_std),
                           servers=64, capacity=200, discipline='FIFO',
                           t_age=(3.0 if aging else None),
                           promote_to=(short if aging else None))
 
-    long = QueueModel(sim, "Long", arrival_dist=None, service_dist=svc(),
+    long = QueueModel(sim, "Long", arrival_dist=None,
+                      service_dist=lognormal(service_mean_h, service_cv, rng_long),
                       servers=32, capacity=100, discipline='FIFO',
                       t_age=(24.0 if aging else None),
                       promote_to=(standard if aging else None))
@@ -85,7 +96,7 @@ def run_hpc_cluster(arrival_lambda: float = 45.0,
     partitions = [short, standard, long]
 
     router = Router(sim, partitions=partitions, weights=list(weights),
-                    arrival_dist=exponential(arrival_lambda))
+                    arrival_dist=exponential(arrival_lambda, rng_arr), rng=rng_arr)
 
     # Total nominal service capacity for context (c / mean per partition).
     mu = 1.0 / service_mean_h
@@ -125,11 +136,15 @@ def run_single_queue_test():
     lambda_rate = 1.5
     mu_rate = 2.0
 
+    # Arrivals and service each draw from their own custom-LCG stream.
+    rng_arr = LCG(seed=42)
+    rng_svc = LCG(seed=43)
+
     q = QueueModel(
         sim=sim,
         name="M/M/1",
-        arrival_dist=exponential(lambda_rate),
-        service_dist=exponential(mu_rate),
+        arrival_dist=exponential(lambda_rate, rng_arr),
+        service_dist=exponential(mu_rate, rng_svc),
         servers=1,
         capacity=float('inf'),
         discipline='FIFO'
@@ -153,5 +168,5 @@ def run_single_queue_test():
 
 
 if __name__ == "__main__":
-    # run_single_queue_test()
-    run_hpc_cluster()
+    run_single_queue_test()
+    run_hpc_cluster(aging=False)

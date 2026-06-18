@@ -28,10 +28,14 @@ Run length: 500h warm-up + 4000h collection (matches Section 6.3 / 9.3).
 
 import heapq
 import math
-import random
+import os
+import sys
 from dataclasses import dataclass, field
 from itertools import product
 from statistics import mean, variance
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from util import LCG  # custom RNG shared with the main simulation
 
 MU = 0.5  # service rate per server (1 / 2h mean)
 
@@ -41,7 +45,10 @@ _MU_LOG = math.log(2.0) - _SIGMA ** 2 / 2
 
 
 def lognormal(rng):
-    return math.exp(_MU_LOG + _SIGMA * rng.gauss(0.0, 1.0))
+    # Box-Muller standard normal from two custom-LCG uniforms.
+    u1, u2 = rng.random(), rng.random()
+    z = math.sqrt(-2.0 * math.log(1.0 - u1)) * math.cos(2.0 * math.pi * u2)
+    return math.exp(_MU_LOG + _SIGMA * z)
 
 
 # ----------------------------------------------------------------------
@@ -50,7 +57,7 @@ class Partition:
     name: str
     c: int
     N: int
-    rng: random.Random            # OWN service stream
+    rng: LCG                      # OWN service stream (custom LCG)
     in_service: int = 0
     queue: list = field(default_factory=list)
     wait_sum: float = 0.0
@@ -92,7 +99,9 @@ class System:
         self.seq += 1
 
     def _sched_arrival(self):
-        self._push(self.t + self.arr_rng.expovariate(self.lam), "arr", -1)
+        # Inverse-transform exponential inter-arrival from the custom LCG.
+        u = self.arr_rng.random()
+        self._push(self.t + (-math.log(1.0 - u) / self.lam), "arr", -1)
 
     def _pick(self):
         r = self.route_rng.random()
@@ -149,12 +158,12 @@ def run_cell(lam, w_std, c_std, rep, warmup=500.0, collect=4000.0):
     rem = 1.0 - w_std
     weights = [rem * 0.25, w_std, rem * 0.75]   # [Short, Standard, Long]
     parts = [
-        Partition("Short",    16,  50, random.Random(3000 + rep)),
-        Partition("Standard", c_std, 200, random.Random(4000 + rep)),
-        Partition("Long",     32, 100, random.Random(5000 + rep)),
+        Partition("Short",    16,  50, LCG(3000 + rep)),
+        Partition("Standard", c_std, 200, LCG(4000 + rep)),
+        Partition("Long",     32, 100, LCG(5000 + rep)),
     ]
     sysm = System(lam, weights, parts,
-                  random.Random(1000 + rep), random.Random(2000 + rep))
+                  LCG(1000 + rep), LCG(2000 + rep))
     sysm.run(warmup)
     sysm.begin_collection(warmup)
     sysm.run(warmup + collect)

@@ -3,9 +3,11 @@ RNG Validation Battery (report Annex A)
 
 Implements 5 statistical tests for pseudo-random number generators,
 applied to two generators:
-  1. LCG as specified in the assignment PDF (m=2^31, a=1103515245, c=12345)
-  2. Python's random.random() (Mersenne Twister) - the generator actually
+  1. The custom LCG (m=2^31, a=1103515245, c=12345) — the generator actually
      used by util.exponential() / util.lognormal() in the main simulation
+     (drawn here from the same util.LCG class).
+  2. Python's random.random() (Mersenne Twister) — kept as a reference
+     comparison only; the simulation no longer uses it.
 
 Tests:
   A. Frequency test (Kolmogorov-Smirnov vs U(0,1))
@@ -25,13 +27,17 @@ from itertools import permutations
 # Generators
 # ============================================================
 
-def generate_lcg(n, seed=42, m=2**31, a=1103515245, c=12345):
-    """LCG: X(n+1) = (a*X(n) + c) mod m, normalised to [0,1)."""
+def generate_lcg(n, seed=42):
+    """Custom LCG stream, drawn from the same util.LCG used by the simulation.
+
+    X(n+1) = (a*X(n) + c) mod m, normalised to [0,1)
+    with m=2^31, a=1103515245, c=12345.
+    """
+    from util import LCG
+    rng = LCG(seed=seed)
     values = np.empty(n)
-    current = seed
     for i in range(n):
-        current = (a * current + c) % m
-        values[i] = current / m
+        values[i] = rng.random()
     return values
 
 
@@ -199,12 +205,12 @@ if __name__ == "__main__":
     lcg = generate_lcg(N, seed=42)
     mt = generate_mt(N, seed=42)
 
-    print("LCG parameters: m=2^31, a=1103515245, c=12345, seed=42")
-    print("MT: Python random.Random(42).random() — generator used by the")
-    print("    main simulation's util.exponential() / util.lognormal()")
+    print("LCG: m=2^31, a=1103515245, c=12345, seed=42 — the generator used by")
+    print("     the main simulation's util.exponential() / util.lognormal()")
+    print("MT:  Python random.Random(42).random() — reference comparison only")
 
-    lcg_results = run_battery(lcg, "LCG (assignment PDF spec)")
-    mt_results = run_battery(mt, "Mersenne Twister (Python random)")
+    lcg_results = run_battery(lcg, "Custom LCG (simulation generator)")
+    mt_results = run_battery(mt, "Mersenne Twister (reference only)")
 
     print(f"\n{'='*60}")
     print("  SUMMARY")

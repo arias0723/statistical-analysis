@@ -218,7 +218,8 @@ class Router:
                  sim: Simulator,
                  partitions: list,
                  weights: list,
-                 arrival_dist: Callable[[], float] = None):
+                 arrival_dist: Callable[[], float] = None,
+                 rng=None):
         if len(partitions) != len(weights):
             raise ValueError("partitions and weights must have equal length")
         self.sim = sim
@@ -226,6 +227,11 @@ class Router:
         total = float(sum(weights))
         self.weights = [w / total for w in weights]
         self.arrival_dist = arrival_dist or (lambda: 1.0)
+        # Routing draws from the same custom-LCG stream as arrivals
+        # (report stream 1 = arrivals + routing). Required, not optional.
+        if rng is None:
+            raise ValueError("Router requires a custom RNG (util.LCG) for routing")
+        self.rng = rng
 
         self.total_arrivals = 0
         self.routed = [0] * len(partitions)
@@ -237,7 +243,7 @@ class Router:
                           self._handle_exogenous_arrival)
 
     def _pick_partition(self) -> int:
-        r = random.random()
+        r = self.rng.random()
         cum = 0.0
         for i, w in enumerate(self.weights):
             cum += w
