@@ -82,17 +82,17 @@ The first simulation run (λ=45 jobs/h, routing weights Short=0.05 / Standard=0.
 
 | Partition | ρ     | W_q (h) | L_q    | P_b   |
 |-----------|-------|---------|--------|-------|
-| Short     | 0.283 | 0.001   | 0.00   | 0.000 |
-| Standard  | 0.998 | 3.967   | 126.65 | 0.111 |
-| Long      | 0.424 | 0.000   | 0.00   | 0.000 |
+| Short     | 0.274 | 0.000   | 0.00   | 0.000 |
+| Standard  | 0.999 | 3.918   | 125.64 | 0.105 |
+| Long      | 0.427 | 0.000   | 0.00   | 0.000 |
 
 This confirms the structural imbalance identified in the problem statement. The aggregate offered load is ρ_total = 0.804, 
-suggesting the system still has capacity, yet Standard alone operates at ρ = 0.998, effectively saturated. Short and Long combined 
-hold 48 nodes (ρ < 0.45) while Standard's 64 nodes are never idle. The 11.1% blocking probability in Standard means roughly 1 in 9 
+suggesting the system still has capacity, yet Standard alone operates at ρ = 0.999, effectively saturated. Short and Long combined 
+hold 48 nodes (ρ < 0.45) while Standard's 64 nodes are never idle. The 10.5% blocking probability in Standard means roughly 1 in 10 
 jobs is rejected outright.
 
 ![fig01](./assets/01-fig01.png)
-> ρ per partition at baseline. Short=0.283, Standard=0.998, Long=0.424.
+> ρ per partition at baseline. Short=0.274, Standard=0.999, Long=0.427.
 
 ### 3.2 Root Cause and Levers
 
@@ -150,7 +150,7 @@ The full HPC system is described by a five-lane BPMN diagram:
 
 | BPMN element            | Symbol | Simulation parameter                | Python construct                   | GPSS construct                           |
 |-------------------------|--------|-------------------------------------|------------------------------------|------------------------------------------|
-| Start event (thin ring) | ○      | A = M(λ), λ=45 jobs/h               | `exponential(45)`                  | `GENERATE (Exponential(1,0,0.022222))`   |
+| Start event (thin ring) | ○      | A = M(λ), λ=45 jobs/h               | `exponential(45, rng)`             | `GENERATE (Exponential(1,0,0.022222))`   |
 | XOR gateway (route)     | ◇      | Routing weights [0.05, 0.80, 0.15]  | `Router._pick_partition()`         | `TRANSFER .050 / .842`                   |
 | XOR gateway (admit)     | ◇      | Capacity check N                    | `total_in_system >= self.capacity` | `TEST L (Q$+S$),N,BLOCKED`               |
 | Task (queue)            | □      | D = FIFO, N = {50, 200, 100}        | `self.queue = deque()`             | `QUEUE / DEPART`                         |
@@ -177,7 +177,7 @@ The simulator is implemented in Python across five modules:
 | `event.py`       | Event dataclass with `(time, priority)` ordering for tie-breaking                  |
 | `simulator.py`   | Central event calendar using `heapq`; advances clock by event; optional trace mode |
 | `queue_model.py` | `QueueModel` class (single Kendall node) and `Router` class (BPMN gateway)         |
-| `util.py`        | Distribution samplers: `exponential`, `deterministic`, `lognormal`                 |
+| `util.py`        | Custom `LCG` generator + distribution samplers (`exponential`, `lognormal`)        |
 | `main.py`        | Entry point: M/M/1 validation and HPC cluster runs                                 |
 
 **Event-driven architecture.** The simulation clock never ticks, it jumps directly from event to event. The event calendar is a min-heap 
@@ -203,23 +203,23 @@ Before running the full HPC model, the engine was validated against closed-form 
 
 | Metric  | Theory | Simulated | Error |
 |---------|--------|-----------|-------|
-| W_q (h) | 1.500  | 1.479     | 1.37% |
-| L_q     | 2.250  | 2.222     | 1.24% |
-| ρ       | 0.750  | 0.748     | 0.27% |
+| W_q (h) | 1.500  | 1.495     | 0.34% |
+| L_q     | 2.250  | 2.234     | 0.71% |
+| ρ       | 0.750  | 0.749     | 0.12% |
 
-Little's Law check: L_q = λ · W_q → 2.222 ≈ 1.500 × 1.479 = 2.219 ✓ (0.1% discrepancy).
+Little's Law check: L_q = λ · W_q → 2.234 ≈ 1.500 × 1.495 = 2.243 ✓ (0.4% discrepancy).
 
 The M/M/1 case validates the single-server path but does not exercise multi-server dispatch. Since all three partitions are 
 multi-server (c = 16/64/32), the engine was additionally validated against the **Erlang-C** formula for an M/M/4 queue (λ=3.0, μ=1.0/server, ρ=0.75, T=80,000h):
 
 | Metric | Theory | Simulated | Error |
 |--------|--------|-----------|-------|
-| W_q    | 0.5094 | 0.5079    | 0.30% |
-| ρ      | 0.7500 | 0.7499    | 0.02% |
-| L_q    | 1.5283 | 1.5247    | 0.23% |
+| W_q    | 0.5094 | 0.5050    | 0.87% |
+| ρ      | 0.7500 | 0.7481    | 0.25% |
+| L_q    | 1.5283 | 1.5140    | 0.93% |
 
-The multi-server logic agrees with Erlang-C to within 0.3%, confirming that server acquisition, queueing, and dispatch behave 
-correctly for c > 1. Little's Law again holds (1.5247 ≈ 3.0 × 0.5079 = 1.5236).
+The multi-server logic agrees with Erlang-C to within 0.9%, confirming that server acquisition, queueing, and dispatch behave 
+correctly for c > 1. Little's Law again holds (1.5140 ≈ 3.0 × 0.5050 = 1.5150).
 
 ### 6.3 GPSS World Validation Model
 
@@ -245,15 +245,15 @@ streams (1=arrivals/routing, 2/3/4=Short/Standard/Long service) via `RMULT` betw
 
 **Results — saturated baseline (λ=45, offered ρ_Standard≈1.13):**
 
-| Metric           | Python (log-normal) | GPSS (log-normal, n=5) |
-|------------------|---------------------|------------------------|
-| W_q Standard (h) | 3.967               | 3.938 ± 0.026          |
-| W_q Short (h)    | 0.001               | 0.000                  |
-| W_q Long (h)     | 0.000               | 0.000                  |
-| ρ Standard       | 0.998               | 0.9996 ± 0.0001        |
-| ρ Short          | 0.283               | 0.279 ± 0.007          |
-| ρ Long           | 0.424               | 0.422 ± 0.005          |
-| P_b Standard     | 0.111               | 0.111 ± 0.005          |
+| Metric           | Python (LCG, log-normal) | GPSS (log-normal, n=5) |
+|------------------|--------------------------|------------------------|
+| W_q Standard (h) | 3.918                    | 3.938 ± 0.026          |
+| W_q Short (h)    | 0.000                    | 0.000                  |
+| W_q Long (h)     | 0.000                    | 0.000                  |
+| ρ Standard       | 0.999                    | 0.9996 ± 0.0001        |
+| ρ Short          | 0.274                    | 0.279 ± 0.007          |
+| ρ Long           | 0.427                    | 0.422 ± 0.005          |
+| P_b Standard     | 0.105                    | 0.111 ± 0.005          |
 
 **Results — high-subcritical (λ=38, offered ρ_Standard≈0.95):**
 
@@ -276,7 +276,7 @@ is designed to exercise.
 
 **Interpretation.**
 
-- At λ=45, GPSS agrees with the Python baseline to within 1.3% on every metric (W_q Standard: −0.7%).
+- At λ=45, GPSS and the Python (LCG) baseline agree to within ~0.5% on W_q Standard (3.918 vs 3.938) and to <0.1% on ρ Standard; ρ Short and ρ Long agree to within ~1.8%, and P_b Standard (Python 0.105 vs GPSS 0.111 ± 0.005) falls within the GPSS 95% CI.
 - At λ=38, GPSS's W_q Standard (0.500h, n=5) falls within its own 95% CI of the reference (0.482h, +3.7%). The ρ values, which depend 
 only on the service-time *mean* and not its shape, agree to within 1.4% throughout.
 - Together with the sensitivity check above, the two points validate both the queueing mechanics (saturated point — admission, routing, capacity) 
@@ -393,14 +393,14 @@ per-replication results are in `doe_results.csv`.
 
 | Run  | λ (A) | w_Std (B) | c_Std (C) | offered ρ_Std | W_q Std (h)   | ρ Std         | P_b Std       | W_q Short (h) | P_b Short | W_q Long (h)  | P_b Long      |
 |------|-------|-----------|-----------|---------------|---------------|---------------|---------------|---------------|-----------|---------------|---------------|
-| 1    | 30    | 0.65      | 64        | 0.609         | 0.000         | 0.608 ± 0.004 | 0.000         | 0.000         | 0.000     | 0.000         | 0.000         |
-| 2    | 60    | 0.65      | 64        | 1.219         | 4.086 ± 0.020 | 1.000         | 0.177 ± 0.004 | 0.038 ± 0.004 | 0.000     | 1.584 ± 0.107 | 0.011 ± 0.002 |
-| 3    | 30    | 0.80      | 64        | 0.750         | 0.003 ± 0.001 | 0.748 ± 0.005 | 0.000         | 0.000         | 0.000     | 0.000         | 0.000         |
-| 4    | 60    | 0.80      | 64        | 1.500         | 4.175 ± 0.017 | 1.000         | 0.332 ± 0.003 | 0.000         | 0.000     | 0.000         | 0.000         |
-| 5    | 30    | 0.65      | 80        | 0.487         | 0.000         | 0.487 ± 0.003 | 0.000         | 0.000         | 0.000     | 0.000         | 0.000         |
-| 6    | 60    | 0.65      | 80        | 0.975         | 0.731 ± 0.110 | 0.971 ± 0.004 | 0.003 ± 0.001 | 0.038 ± 0.004 | 0.000     | 1.584 ± 0.107 | 0.011 ± 0.002 |
+| 1    | 30    | 0.65      | 64        | 0.609         | 0.000         | 0.607 ± 0.004 | 0.000         | 0.000         | 0.000     | 0.000         | 0.000         |
+| 2    | 60    | 0.65      | 64        | 1.219         | 4.091 ± 0.023 | 1.000         | 0.178 ± 0.004 | 0.039 ± 0.004 | 0.000     | 1.673 ± 0.145 | 0.013 ± 0.002 |
+| 3    | 30    | 0.80      | 64        | 0.750         | 0.002 ± 0.001 | 0.747 ± 0.004 | 0.000         | 0.000         | 0.000     | 0.000         | 0.000         |
+| 4    | 60    | 0.80      | 64        | 1.500         | 4.182 ± 0.018 | 1.000         | 0.332 ± 0.003 | 0.000         | 0.000     | 0.000         | 0.000         |
+| 5    | 30    | 0.65      | 80        | 0.487         | 0.000         | 0.485 ± 0.003 | 0.000         | 0.000         | 0.000     | 0.000         | 0.000         |
+| 6    | 60    | 0.65      | 80        | 0.975         | 0.726 ± 0.099 | 0.972 ± 0.003 | 0.003 ± 0.001 | 0.039 ± 0.004 | 0.000     | 1.673 ± 0.145 | 0.013 ± 0.002 |
 | 7    | 30    | 0.80      | 80        | 0.600         | 0.000         | 0.598 ± 0.004 | 0.000         | 0.000         | 0.000     | 0.000         | 0.000         |
-| 8    | 60    | 0.80      | 80        | 1.200         | 2.864 ± 0.015 | 1.000         | 0.166 ± 0.004 | 0.000         | 0.000     | 0.000         | 0.000         |
+| 8    | 60    | 0.80      | 80        | 1.200         | 2.869 ± 0.013 | 1.000         | 0.166 ± 0.003 | 0.000         | 0.000     | 0.000         | 0.000         |
 
 Values are mean ± 95% CI across R=10 replications; entries shown as a single value (e.g. `0.000`) had zero variance across all replications. 
 Runs 2/6, 1/5, 3/7, and 4/8 differ only in c_Standard — under CRN, their Short- and Long-partition entries are identical, as the 
@@ -412,7 +412,7 @@ What it shows, matching the values exactly:
 - All four λ=30 runs (1, 3, 5, 7) are flat zero — at moderate load nothing blocks, regardless of weight or server count (Finding 1).
 - λ=60 Standard blocking is severe at the current config (run 4: 0.332), drops to 0.166 with more servers (run 8), and collapses to 0.003 
 in run 6 (w=0.65, c=80) — the recommended cell.
-- Long blocking appears only in runs 2 and 6 (both 0.011) — the redistribution runs where weight shifts off Standard onto Long (Finding 3, identical under CRN).
+- Long blocking appears only in runs 2 and 6 (both 0.013) — the redistribution runs where weight shifts off Standard onto Long (Finding 3, identical under CRN).
 
 ### 8.3 Effects Analysis
 
@@ -421,14 +421,14 @@ for main effects; signed cross-products for interactions), with a 95% CI half-wi
 
 | Effect                | P_b Standard | W_q Standard (h)   |
 |-----------------------|--------------|--------------------|
-| A — λ                 | +0.1694      | +2.9633            |
-| B — w_Standard        | +0.0795      | +0.5562            |
-| C — c_Standard        | −0.0851      | −1.1673            |
-| A×B                   | +0.0795      | +0.5548            |
-| A×C                   | −0.0851      | −1.1659            |
-| B×C                   | +0.0023      | +0.5099            |
-| A×B×C                 | +0.0023      | +0.5113            |
-| **95% CI half-width** | **±0.0015**  | **±0.0252**        |
+| A — λ                 | +0.1698      | +2.9664            |
+| B — w_Standard        | +0.0796      | +0.5591            |
+| C — c_Standard        | −0.0852      | −1.1700            |
+| A×B                   | +0.0796      | +0.5580            |
+| A×C                   | −0.0852      | −1.1689            |
+| B×C                   | +0.0023      | +0.5123            |
+| A×B×C                 | +0.0023      | +0.5135            |
+| **95% CI half-width** | **±0.0014**  | **±0.0229**        |
 
 Every effect's confidence interval excludes zero — even B×C and A×B×C, which the single-run design could not distinguish from noise. 
 A factorial ANOVA reaches the same verdict as the contrast confidence intervals above (the CI and F tests are equivalent for a 2³ design: 
@@ -438,29 +438,29 @@ a CI excluding zero corresponds to F > t² = 3.97). For each effect, SS = (N/4)�
 
 | Source    | SS       | df | MS         | F      | p        |
 |-----------|----------|----|------------|--------|----------|
-| A (λ)     | 0.5739   | 1  | 0.5739     | 50,700 | <0.0001  |
-| B (w_Std) | 0.1264   | 1  | 0.1264     | 11,160 | <0.0001  |
-| C (c_Std) | 0.1448   | 1  | 0.1448     | 12,790 | <0.0001  |
-| A×B       | 0.1264   | 1  | 0.1264     | 11,160 | <0.0001  |
-| A×C       | 0.1448   | 1  | 0.1448     | 12,790 | <0.0001  |
-| B×C       | 0.000106 | 1  | 0.000106   | 9.34   | 0.0032   |
-| A×B×C     | 0.000106 | 1  | 0.000106   | 9.34   | 0.0032   |
-| Error     | 0.000815 | 72 | 1.13×10⁻⁵  |        |          |
-| Total     | 1.1174   | 79 |            |        |          |
+| A (λ)     | 0.5766   | 1  | 0.5766     | 60,170 | <0.0001  |
+| B (w_Std) | 0.1266   | 1  | 0.1266     | 13,210 | <0.0001  |
+| C (c_Std) | 0.1453   | 1  | 0.1453     | 15,160 | <0.0001  |
+| A×B       | 0.1266   | 1  | 0.1266     | 13,210 | <0.0001  |
+| A×C       | 0.1453   | 1  | 0.1453     | 15,160 | <0.0001  |
+| B×C       | 0.000106 | 1  | 0.000106   | 11.0   | 0.0015   |
+| A×B×C     | 0.000106 | 1  | 0.000106   | 11.0   | 0.0015   |
+| Error     | 0.000690 | 72 | 9.58×10⁻⁶  |        |          |
+| Total     | 1.1212   | 79 |            |        |          |
 
 **Table 8.3c — Factorial ANOVA, W_q Standard (h)**
 
 | Source    | SS      | df | MS         | F      | p        |
 |-----------|---------|----|------------|--------|----------|
-| A (λ)     | 175.62  | 1  | 175.62     | 54,900 | <0.0001  |
-| B (w_Std) | 6.187   | 1  | 6.187      | 1,936  | <0.0001  |
-| C (c_Std) | 27.25   | 1  | 27.25      | 8,526  | <0.0001  |
-| A×B       | 6.156   | 1  | 6.156      | 1,926  | <0.0001  |
-| A×C       | 27.19   | 1  | 27.19      | 8,506  | <0.0001  |
-| B×C       | 5.200   | 1  | 5.200      | 1,627  | <0.0001  |
-| A×B×C     | 5.229   | 1  | 5.229      | 1,636  | <0.0001  |
-| Error     | 0.2301  | 72 | 3.196×10⁻³ |        |          |
-| Total     | 253.06  | 79 |            |        |          |
+| A (λ)     | 175.99  | 1  | 175.99     | 66,660 | <0.0001  |
+| B (w_Std) | 6.253   | 1  | 6.253      | 2,369  | <0.0001  |
+| C (c_Std) | 27.380  | 1  | 27.380     | 10,370 | <0.0001  |
+| A×B       | 6.227   | 1  | 6.227      | 2,359  | <0.0001  |
+| A×C       | 27.325  | 1  | 27.325     | 10,350 | <0.0001  |
+| B×C       | 5.250   | 1  | 5.250      | 1,989  | <0.0001  |
+| A×B×C     | 5.274   | 1  | 5.274      | 1,998  | <0.0001  |
+| Error     | 0.1901  | 72 | 2.640×10⁻³ |        |          |
+| Total     | 253.89  | 79 |            |        |          |
 
 Every effect is significant, consistent with the contrast CIs. The F-magnitudes should be read qualitatively rather than literally: 
 variance is strongly heterogeneous across cells — the four λ=30 cells block nothing and have zero variance, while the W_q error term is 
@@ -475,30 +475,30 @@ load the system is robust to misconfiguration of either lever.**
 
 **Finding 2 — c_Standard has a larger effect than w_Standard, but they point the same direction.** Both B and C have similar-magnitude main effects 
 on P_b_Standard (+0.080 vs −0.085), but C is achieved by adding hardware while B is a zero-cost configuration change. Comparing run 4 
-(λ=60, w=0.80, c=64 → P_b=0.332 ± 0.003, the worst cell) against run 6 (λ=60, w=0.65, c=80 → P_b=0.0025 ± 0.0011, the best cell under high load) 
-shows the *combined* effect (0.332 → 0.0025, a 99.2% reduction) is far larger than either factor's main effect alone — confirming the multiplicative relationship motivating this design.
+(λ=60, w=0.80, c=64 → P_b=0.332 ± 0.003, the worst cell) against run 6 (λ=60, w=0.65, c=80 → P_b=0.003 ± 0.001, the best cell under high load) 
+shows the *combined* effect (0.332 → 0.003, a 99.2% reduction) is far larger than either factor's main effect alone — confirming the multiplicative relationship motivating this design.
 
 **Finding 3 — the bottleneck shifts to Long under redistribution at high λ, and CRN shows this cleanly.** Runs 2 and 6 (w_Standard=0.65 at λ=60) 
-both show Long developing non-trivial blocking, with **P_b_Long = 0.011 ± 0.002 and W_q_Long = 1.584 ± 0.107h in both runs — identical to 
+both show Long developing non-trivial blocking, with **P_b_Long = 0.013 ± 0.002 and W_q_Long = 1.673 ± 0.145h in both runs — identical to 
 three decimal places**, as expected under CRN: Long's offered load depends only on λ and w_Standard, not on c_Standard, so its statistics *must* 
 be unaffected by the run-4↔6-style change in C. This mirrors the aging-promotion finding from Section 11: relieving Standard by redistributing 
 traffic does not eliminate congestion, it relocates it — here to Long, which receives 3× the redistributed weight under the 1:3 split. 
 Even so, the *total* blocking across all partitions in run 6 is dramatically lower than in run 4 (Finding 2), so the redistribution is still 
 a net improvement.
 
-**Finding 4 — B×C is negligible for P_b_Standard but not for W_q_Standard.** For P_b_Standard, B×C = +0.0023 is statistically nonzero (its CI is ±0.0015) 
+**Finding 4 — B×C is negligible for P_b_Standard but not for W_q_Standard.** For P_b_Standard, B×C = +0.0023 is statistically nonzero (its CI is ±0.0014) 
 but practically small — about 3% of either main effect's magnitude — so the two levers are close to additive for blocking probability. 
-For W_q_Standard, however, B×C = +0.510h ± 0.025h is *not* small: it is comparable to B's main effect (+0.556h) and roughly 44% of C's 
-main effect (−1.167h). The two levers' joint effect on **waiting time** is meaningfully super-additive, even though their joint effect 
+For W_q_Standard, however, B×C = +0.512h ± 0.023h is *not* small: it is comparable to B's main effect (+0.559h) and roughly 44% of C's 
+main effect (−1.170h). The two levers' joint effect on **waiting time** is meaningfully super-additive, even though their joint effect 
 on **blocking probability** is close to additive. This was visible in the original single-run effects table (B×C≈+0.469h) but could 
 not be distinguished from noise with n=1; with n=10 it is confirmed as a genuine interaction.
 
 ### 8.4 Recommended Configuration and Follow-up
 
 Under high load (λ≈60), the (B−, C+) cell — w_Standard=0.65, c_Standard=80 — minimises total system blocking, taking P_b_Standard from 0.332 ± 0.003 
-(run 4, current configuration) to 0.0025 ± 0.0011 (run 6, a 99.2% reduction). For **P_b_Standard**, B×C is small (+0.0023, Finding 4) relative to the main effects, 
+(run 4, current configuration) to 0.003 ± 0.001 (run 6, a 99.2% reduction). For **P_b_Standard**, B×C is small (+0.0023, Finding 4) relative to the main effects, 
 so the routing-weight and server-allocation levers are close to additive for blocking probability — the screening design did **not** find a strong antagonistic 
-interaction between them for this response, unlike the strong λ-dependence found in Finding 1. For **W_q_Standard**, however, B×C (+0.510h, Finding 4) is comparable 
+interaction between them for this response, unlike the strong λ-dependence found in Finding 1. For **W_q_Standard**, however, B×C (+0.512h, Finding 4) is comparable 
 to B's main effect, so a configuration chosen to minimise P_b_Standard need not minimise W_q_Standard by the same proportion.
 
 Given the asymmetric cost (B is free, C requires hardware), the recommended next step is a **one-dimensional sweep of w_Standard** at the high-c configuration 
@@ -516,7 +516,7 @@ The assignment specifies five validation methods; each is addressed in its own s
 Two independent checks verify the event-driven engine itself.
 
 **Theoretical comparison.** The engine is validated against closed-form M/M/1 (single-server) and M/M/4 Erlang-C (multi-server) theory (Section 6.2). 
-All metrics agree within 1.4% (M/M/1) and 0.3% (M/M/4) of theoretical predictions. Little's Law holds to within 0.1% in both cases, confirming the core 
+All metrics agree within 0.7% (M/M/1) and 0.9% (M/M/4) of theoretical predictions. Little's Law holds to within 0.4% in both cases, confirming the core 
 event loop, queueing, and dispatch logic are correct for both single and multi-server configurations.
 
 **Trace inspection.** The trace log (Section 6.4) confirms monotonic clock advancement, correct tie-breaking priority (Departure before Arrival on ties), 
@@ -524,16 +524,16 @@ and queue dynamics consistent with ρ=0.75 — verifying the implementation step
 
 ### 9.2 Verify the RNG Implementation and Validate its Parametrization
 
-A five-test battery (Frequency/KS, Gap, Order, Runs, Serial) was run on both the LCG specified by the assignment and on Python's Mersenne Twister,
-the generator behind `util.exponential()`/`util.lognormal()` used throughout the simulation. Both generators pass all five tests at α=0.05 (full results in Annex A).
-The Mersenne Twister result is the one that matters for trusting Sections 6–8: it confirms the uniform stream feeding the inter-arrival and service-time samplers 
+A five-test battery (Frequency/KS, Gap, Order, Runs, Serial) was run on the custom LCG (m=2³¹, a=1103515245, c=12345) — the generator behind
+`util.exponential()`/`util.lognormal()` used throughout the simulation — and, for comparison, on Python's Mersenne Twister. Both generators pass all five tests at α=0.05 (full results in Annex A).
+The LCG result is the one that matters for trusting Sections 6–8: it confirms the uniform stream feeding the inter-arrival and service-time samplers 
 shows no detected non-randomness at N=10,000.
 
 ### 9.3 Validate the Experimental Framework
 
 The experimental framework, how each run is conducted and how transient bias is handled, is validated via the warm-up analysis: 
-the M/M/1 model was run at T=5,000h (8.9% error vs theory) and T=50,000h (1.37% error), with the error reduction proportional 
-to 1/T as classical theory predicts. The `reset_statistics()` method implements warm-up deletion (matching GPSS World's `RESET`), 
+the M/M/1 model was run at T=5,000h (12.7% error vs theory) and T=50,000h (0.34% error) — the error falls steeply as the 
+run lengthens and the transient is amortised over a longer collection window. The `reset_statistics()` method implements warm-up deletion (matching GPSS World's `RESET`), 
 used in the GPSS validation (500h warm-up + 4000h collection, Section 6.3). The GPSS validation implements this boundary via two 
 single-shot timer transactions, with the blocking counters (`SARR`/`SBLK`) explicitly reset at the warm-up boundary so P_b reflects 
 the collection window only. The DOE (Section 8) reuses this same 500h/4000h framework, now with **R=10 replications per cell** and per-partition 
@@ -552,8 +552,8 @@ at the saturated baseline (λ=45) but by ~77% at a high-subcritical load (λ=38)
 ### 9.5 Validate the Results
 
 The Python DES results are validated against an independent GPSS World implementation of the same system (Section 6.3), run at two operating points 
-with matched log-normal service distributions across 5 replications each. At the saturated baseline (λ=45), all seven response metrics agree with Python 
-within 1.3%. At a high-subcritical load (λ=38), GPSS's W_q Standard (0.500h ± 0.159h, n=5) falls within its 95% CI of an independent reference implementation (0.482h). 
+with matched log-normal service distributions across 5 replications each. At the saturated baseline (λ=45), the W_q and ρ metrics agree with Python 
+within ~1.8%, and P_b Standard (Python 0.105 vs GPSS 0.111 ± 0.005) falls within the GPSS 95% CI. At a high-subcritical load (λ=38), GPSS's W_q Standard (0.500h ± 0.159h, n=5) falls within its 95% CI of an independent reference implementation (0.482h). 
 Together with the CV-sensitivity check in Section 6.3, the two points validate both the queueing mechanics and the service-time distribution, 
 providing strong evidence that the reported results reflect the model — including its distributional assumptions — rather than an artefact of one implementation or one operating regime.
 
@@ -562,31 +562,31 @@ providing strong evidence that the reported results reflect the model — includ
 ## 10. Results / Conclusions
 
 **The cluster's reported delays are a symptom of a structural imbalance, not a capacity shortfall.** At the baseline configuration (λ=45, weights 0.05/0.80/0.15, c=16/64/32), 
-aggregate offered load is a comfortable ρ_total=0.804, yet the Standard partition alone runs at ρ=0.998 with W_q=3.97h and P_b=0.111, while Short and Long sit at ρ=0.28 and 0.42. 
+aggregate offered load is a comfortable ρ_total=0.804, yet the Standard partition alone runs at ρ=0.999 with W_q=3.92h and P_b=0.105, while Short and Long sit at ρ=0.27 and 0.43. 
 The cause is the fixed routing split (SS_01): 80% of traffic is sent to Standard regardless of true runtime, concentrating nearly all congestion in one of three partitions.
 
 **The DOE confirms the imbalance is correctable through configuration, with two levers acting jointly.** The 2³ factorial (Section 8, R=10 replications 
 with common random numbers across cells) shows that at low load (λ=30) routing weight and server allocation have no measurable effect, P_b_Standard=0.000 ± 0.000 in every cell. 
-Under overload (λ=60), the two levers combine to take P_b_Standard from 0.332 ± 0.003 (current weights, current servers) down to 0.0025 ± 0.0011 (a 99.2% reduction) 
+Under overload (λ=60), the two levers combine to take P_b_Standard from 0.332 ± 0.003 (current weights, current servers) down to 0.003 ± 0.001 (a 99.2% reduction) 
 when the Standard weight is lowered to 0.65 and its server count raised to 80. Neither change alone achieves this; the combination is required, 
 consistent with the multiplicative form of ρ = λw/(cμ). The two levers are close to additive for P_b_Standard but not for W_q_Standard, where their 
 interaction (+0.51h) is comparable to either main effect (Section 8.3, Finding 4) — a configuration tuned for blocking probability is not automatically tuned for waiting time.
 
-**No configuration eliminates congestion, it relocates it.** The best DOE cell (run 6) trades Standard's blocking for a small but non-zero blocking in Long (P_b_Long = 0.011 ± 0.002), 
+**No configuration eliminates congestion, it relocates it.** The best DOE cell (run 6) trades Standard's blocking for a small but non-zero blocking in Long (P_b_Long = 0.013 ± 0.002), 
 because the redistributed weight flows disproportionately there under the chosen 1:3 split. Under common random numbers this value is identical between runs 2 and 6, 
 confirming it depends only on the routing weight, not on c_Standard, as the design intends.
 
 **The simulation engine is independently validated across three methods and, for the GPSS comparison, two operating points.** M/M/1 and M/M/4 (Erlang-C) closed-form 
-theory agree with the Python DES to within 1.4% (Section 6.2), and an independent GPSS World model using the same log-normal service distribution agrees with Python 
-to within 1.3% at the saturated baseline and falls within its confidence interval at a high-subcritical load (Section 6.3, Section 9). Little's Law holds to 
-within 0.1% in the closed-form validation cases. The trace log confirms correct event ordering and tie-breaking.
+theory agree with the Python DES to within 0.9% (Section 6.2), and an independent GPSS World model using the same log-normal service distribution agrees with Python 
+to within ~1.8% at the saturated baseline (P_b Standard within its 95% CI) and falls within its confidence interval at a high-subcritical load (Section 6.3, Section 9). Little's Law holds to 
+within 0.4% in the closed-form validation cases. The trace log confirms correct event ordering and tie-breaking.
 
 **Recommendations**, in order of cost:
 
 1. **Zero-cost:** rebalance routing weights — reduce the Standard share from 0.80 toward 0.65, redistributing primarily to Short rather than Long 
 to avoid creating a secondary bottleneck (Section 8.4).
 2. **Low-cost:** reallocate 16 nodes to Standard, which the DOE shows compounds with weight rebalancing to a 99.2% reduction in P_b_Standard under overload.
-3. **No-cost, complementary:** enable aging-based priority promotion at a recalibrated threshold (t_age≈1.5h), which independently cut blocking by 96% 
+3. **No-cost, complementary:** enable aging-based priority promotion at a recalibrated threshold (t_age≈1.5–2h), which independently cut blocking by ~96% 
 in the preliminary sweep (Section 11) and could be combined with (1)–(2) for further gains.
 4. **Data-driven, long-term:** instrument the cluster to capture actual vs declared walltime, replacing the assumed routing weights and log-normal service 
 parameters (SD_01, SS_01) with empirical distributions.
@@ -623,22 +623,22 @@ A preliminary run with promotion enabled swept the Standard→Short threshold `t
 
 | t_age (h) | Standard W_q (h) | Short W_q (h) | Promotions | Total blocked |
 |-----------|------------------|---------------|------------|---------------|
-| 6.0       | 3.967            | 0.001         | 2          | 15,958        |
-| 3.0       | 2.708            | 3.212         | 14,950     | 676           |
-| 2.0       | 1.700            | 2.891         | 16,045     | 775           |
-| **1.5**   | **1.222**        | **2.382**     | **15,295** | **633**       |
-| 1.0       | 0.719            | 2.185         | 15,271     | 813           |
-| 0.5       | 0.288            | 1.718         | 16,663     | 704           |
+| 6.0       | 3.918            | 0.000         | 0          | 15,046        |
+| 3.0       | 2.679            | 3.334         | 15,003     | 654           |
+| **2.0**   | **1.705**        | **2.721**     | **15,132** | **618**       |
+| 1.5       | 1.212            | 2.419         | 15,182     | 656           |
+| 1.0       | 0.729            | 2.164         | 15,410     | 687           |
+| 0.5       | 0.288            | 1.852         | 16,343     | 711           |
 
 ![fig02](./assets/02-fig02.png)
 > (top) Standard W_q and Short W_q vs t_age; (bottom) total blocked jobs vs t_age.
 
 Three observations motivate this as future work:
 
-1. **A high threshold is inert** — at `t_age`=6h only 2 promotions fire; at ρ=0.998 jobs complete or are blocked before the timer elapses.
-2. **Promotion redistributes congestion** — lowering `t_age` cuts Standard W_q but loads Short (its W_q reaches 1.72h at `t_age`=0.5h). The bottleneck 
+1. **A high threshold is inert** — at `t_age`=6h no promotions fire; at ρ=0.999 jobs complete or are blocked before the timer elapses (the row reproduces the no-aging baseline of Section 3.1).
+2. **Promotion redistributes congestion** — lowering `t_age` cuts Standard W_q but loads Short (its W_q reaches 1.85h at `t_age`=0.5h). The bottleneck 
 shifts rather than disappearing, which is why routing rebalancing (Section 8) is the primary lever and aging a complement.
-3. **`t_age`=1.5h minimises total blocking** — blocking falls from 15,958 to 633 (~96%) through scheduler configuration alone.
+3. **Total blocking is minimised around `t_age`≈1.5–2h** — blocking falls from 15,046 to ~620 (~96%) through scheduler configuration alone; the precise optimum within that range sits inside single-replication noise.
 
 ---
 
@@ -646,7 +646,7 @@ shifts rather than disappearing, which is why routing rebalancing (Section 8) is
 
 ### Annex A — RNG Validation
 
-**Python's Mersenne Twister** (`random.random()`), the actual generator behind `util.exponential()` and `util.lognormal()` used throughout the Python DES (Sections 6–8).
+**The custom LCG** (`m=2³¹, a=1103515245, c=12345`) is the actual generator behind `util.exponential()` and `util.lognormal()` used throughout the Python DES (Sections 6–8); the samplers draw from `util.LCG` via inverse-CDF (exponential) and Box–Muller (log-normal) transforms. Python's Mersenne Twister is included only as a reference comparison.
 
 **Test battery:**
 
@@ -672,10 +672,11 @@ A p-value ≥ 0.05 fails to reject H0 ("appears random"); p < 0.05 indicates a d
 
 **Interpretation.** Both generators pass all five tests at α=0.05 — no test rejects the null hypothesis of randomness. Two points are worth noting:
 
-The **Mersenne Twister results are the ones that back the simulation's validity**. MT passes the same battery with comparable or better p-values 
-across the board (notably the runs test, p=0.987, and the order test, p=0.311, both higher than the LCG's). Since `util.exponential()` and `util.lognormal()` 
-both sample from `random.random()` via inverse-CDF transforms, the quality of the underlying uniform stream is what propagates into the inter-arrival 
-and service-time distributions used in Sections 6–8. The MT results therefore support the assumption that the simulation's stochastic inputs behave as intended.
+The **LCG results are the ones that back the simulation's validity**, since `util.exponential()` and `util.lognormal()` both sample from the LCG 
+via inverse-CDF / Box–Muller transforms — the quality of the underlying uniform stream is what propagates into the inter-arrival and service-time 
+distributions used in Sections 6–8. The LCG passes all five tests (Frequency p=0.765, Gap 0.483, Order 0.168, Runs 0.770, Serial 0.972), so it 
+supports the assumption that the simulation's stochastic inputs behave as intended. The Mersenne Twister column is shown alongside as a reference; 
+it passes equally well (comparable or higher p-values across the board), confirming the LCG is not an outlier-quality generator.
 
 **Reproducibility.** The full battery implementation is in `rng_validation.py`.
 
