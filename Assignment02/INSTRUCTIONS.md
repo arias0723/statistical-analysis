@@ -44,16 +44,9 @@ python3 main.py
 This calls `run_hpc_cluster()` and prints per-partition statistics
 (throughput, W_q, L_q, ρ, P_b) for Short / Standard / Long.
 
-> Note: the baseline reported in the document (Standard W_q ≈ 3.97 h, no
-> aging promotion) requires `aging=False`. The shipped `__main__` calls
-> `run_hpc_cluster()` with the default `aging=True`, which enables promotion
-> and gives different numbers. To reproduce the documented baseline, run with
-> aging disabled, e.g. edit the call in `main.py` to `run_hpc_cluster(aging=False)`.
-
 ### 3.2 M/M/1 validation vs closed-form theory (Section 6.2)
 
-In `main.py`, enable `run_single_queue_test()` in the `__main__` block
-(it is commented out by default), then:
+In `main.py`, enable `run_single_queue_test()` in the `__main__` block then:
 
 ```bash
 python3 main.py
@@ -76,7 +69,7 @@ dispatch path (every partition has c > 1).
 ### 3.4 Design of Experiments (Section 8)
 
 ```bash
-python3 doe/doe_runner.py 10      # 10 replications per cell (default)
+python3 doe/doe_runner.py 10
 ```
 
 Prints the 8-cell 2³ factorial table (mean ± 95% CI) and the main/interaction
@@ -86,9 +79,7 @@ c_Standard produce identical Short/Long realisations.
 
 ## 4. Random number generation — custom RNG
 
-The simulation draws from a **custom linear congruential generator (LCG)**,
-not Python's built-in `random` module, and the statistical test battery is
-applied to that same generator.
+The simulation draws from a **custom linear congruential generator (LCG)**.
 
 ### 4.1 The generator
 
@@ -162,11 +153,11 @@ the tested stream is exactly the one feeding the simulation.
 Open `gpss/hpc_validation_final.gps`. Pick the scenario by editing the
 arrival `GENERATE` line (mean inter-arrival time, IAT = 1/λ):
 
-| Scenario | λ (jobs/h) | IAT to enter | Offered ρ_Standard |
-|----------|-----------|--------------|--------------------|
-| Saturated baseline | 45 | `0.022222` | ≈ 1.13 |
-| High-subcritical (priority point) | 38 | `0.026316` | ≈ 0.95 |
-| Moderate | 30 | `0.033333` | ≈ 0.75 |
+| Scenario                          | λ (jobs/h) | IAT to enter | Offered ρ_Standard |
+|-----------------------------------|------------|--------------|--------------------|
+| Saturated baseline                | 45         | `0.022222`   | ≈ 1.13             |
+| High-subcritical (priority point) | 38         | `0.026316`   | ≈ 0.95             |
+| Moderate                          | 30         | `0.033333`   | ≈ 0.75             |
 
 ```
 GENERATE  (Exponential(1,0,0.022222))   ; edit the third argument per scenario
@@ -223,7 +214,3 @@ raw `SR$...` and `X$...` values and divide manually.
 | GPSS λ=38 (Section 6.3) | §5.2–5.4 at IAT 0.026316 | W_q Std ≈ 0.50 |
 | DOE (Section 8) | §3.4 | 8-cell table + effects |
 
-> The Python numeric results in the report were originally produced with
-> Python's Mersenne Twister. Now that the engine draws from the custom LCG,
-> re-run §3 and §3.4 to regenerate the baseline and DOE tables before quoting
-> exact figures; the distributions are unchanged so values shift only slightly.
