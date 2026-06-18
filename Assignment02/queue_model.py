@@ -26,7 +26,7 @@ class QueueModel:
         self.capacity = capacity
         self.discipline = discipline
         self.next_queue = next_queue
-        # Aging / priority promotion (report SS_03, SD_03): a job that has
+        # Aging / priority promotion: a job that has
         # waited longer than t_age is promoted into promote_to, bypassing that
         # partition's admission gateway.
         self.t_age = t_age
